@@ -8,6 +8,8 @@ import pandas as pd
 import seaborn as sns
 
 import util
+# Use darkgrid instead
+sns.set_theme(style="darkgrid")
 
 FILE_DIR = Path(__file__).resolve().parent
 PLOT_DIR = FILE_DIR.joinpath("plots")
@@ -48,7 +50,6 @@ def strided_app(a, L, S):  # Window len = L, Stride len/stepsize = S
     return np.lib.stride_tricks.as_strided(a, shape=(nrows, L),
                                            strides=(S * n, n))
 
-
 def compute_rolling_df_mean(pd_df, roll):
     rolling_df = pd_df.rolling(roll).mean().dropna()
     return rolling_df.reset_index(drop=True)
@@ -74,7 +75,7 @@ def normalize_df_min_max_range(pd_df, df_min, df_max):
 def normalize_df_tanh(pd_df, df_min, df_max):
     df_mean = np.mean(pd_df.values)
     df_std = np.std(pd_df.values)
-    normalized_df = np.tanh(0.01(pd_df - df_mean) / df_std + 1)
+    normalized_df = np.tanh(0.01 * (pd_df - df_mean) / df_std + 1)
     return normalized_df
 
 
@@ -94,8 +95,11 @@ def read_csv(csv_path):
 
 def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
     data_dir = Path(f"{data_dir}")
+    print(f"data_dir={data_dir}")
     conf_name = "test_config"
     config = parse_config(data_dir, conf_name)
+    print(f"config={config} test_id={test_id}")
+
     modes = config["modes"]
     epochs = config["epochs"]
     teacher_name = config["teacher_name"] + "_teacher"
@@ -111,15 +115,25 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
             print(f"Results for {mode} not found, ignoring...")
     teacher_path = data_dir.joinpath(f"{teacher_name}_val.csv")
     dfs["teacher"] = read_csv(teacher_path)
+
+
     df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
+    print(f"df={df}")
     print(df.max().sort_values(ascending=True))
-    df = compute_rolling_df_mean(df, 10)
+    # df = compute_rolling_df_mean(df, 10)
+    # print(f"df_mean={df}")
+
     if (len(modes) + 1) > len(DASH_STYLES):
         print("Too many lines to plot!")
         return
 
+    # No idea why event is not working
+    # sns.lineplot(data=df, palette="tab10",
+    #              style="event", dashes=DASH_STYLES)
+
     sns.lineplot(data=df, palette="tab10",
-                 style="event", dashes=DASH_STYLES)
+                 linewidth=2.5)
+    # sns.lineplot(data=df, palette="tab10")
     plot_dir = Path(plot_dir).joinpath(test_id)
     util.check_dir(plot_dir)
     plt_name = f"{epochs}_epochs_{teacher_name}_to_{student_name}"
@@ -132,3 +146,4 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
 if __name__ == '__main__':
     args = parse_arguments()
     plot_results(args.data_dir)
+    # plot_results("results/clzz/cifar10", plot_dir=PLOT_DIR, test_id="clzz")

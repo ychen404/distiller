@@ -335,7 +335,7 @@ def start_evaluation(args):
     util.dump_json_config(test_conf_name, params)
     run_benchmarks(args.modes, params, args.s_name, args.t_name)
     plot_results(results_dir, test_id=test_id)
-
+    
 
 if __name__ == "__main__":
     ARGS = parse_arguments()
