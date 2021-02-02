@@ -131,13 +131,13 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
     # sns.lineplot(data=df, palette="tab10",
     #              style="event", dashes=DASH_STYLES)
 
-    sns.lineplot(data=df, palette="tab10",
-                 linewidth=2.5)
+    sns.lineplot(data=df, palette="tab10", linewidth=2.5)
     # sns.lineplot(data=df, palette="tab10")
     plot_dir = Path(plot_dir).joinpath(test_id)
     util.check_dir(plot_dir)
     plt_name = f"{epochs}_epochs_{teacher_name}_to_{student_name}"
     plt_name = Path(plot_dir).joinpath(plt_name)
+    plt.ylabel('Accuracy')
     plt.savefig(f"{plt_name}.pdf", bbox_inches='tight', pad_inches=0.05)
     plt.savefig(f"{plt_name}.png", bbox_inches='tight', pad_inches=0.05)
     plt.gcf().clear()
@@ -145,5 +145,6 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
 
 if __name__ == '__main__':
     args = parse_arguments()
-    plot_results(args.data_dir)
-    # plot_results("results/clzz/cifar10", plot_dir=PLOT_DIR, test_id="clzz")
+    # plot_results(args.data_dir)
+    # To plot a specific result
+    plot_results("results/clzz/cifar10", plot_dir=PLOT_DIR, test_id="clzz")

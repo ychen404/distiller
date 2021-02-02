@@ -136,7 +136,6 @@ class Trainer():
     def save(self, epoch, name):
         torch.save({"model_state_dict": self.net.state_dict(), }, name)
 
-
 class BaseTrainer(Trainer):
 
     def calculate_loss(self, data, target):
