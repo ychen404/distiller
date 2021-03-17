@@ -3,9 +3,21 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from tqdm import tqdm
-
+from torch.utils.data import DataLoader, Dataset
 from optimizer import get_optimizer, get_scheduler
 
+
+class DatasetSplit(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = list(idxs)
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, label = self.dataset[self.idxs[item]]
+        return image, label
 
 def init_progress_bar(train_loader):
     batch_size = train_loader.batch_size
@@ -15,16 +27,18 @@ def init_progress_bar(train_loader):
     bar_format += "{postfix}"
     # if stderr has no tty disable the progress bar
     disable = not sys.stderr.isatty()
+    # print(f"###################### disable = {disable} ###########################")
+
     t = tqdm(total=len(train_loader) * batch_size,
-             bar_format=bar_format, disable=disable)
+             bar_format=bar_format, disable=disable, position=0, leave=True)
     if disable:
         # a trick to allow execution in environments where stderr is redirected
         t._time = lambda: 0.0
     return t
 
-
 class Trainer():
-    def __init__(self, net, config):
+    # def __init__(self, net, config):
+    def __init__(self, net, config, idxs=None):
         self.net = net
         self.device = config["device"]
         self.name = config["test_name"]
@@ -37,10 +51,21 @@ class Trainer():
         self.scheduler = self.sched_cls(self.optimizer, **self.sched_args)
 
         self.loss_fun = nn.CrossEntropyLoss()
+        self.local_bs = config["batch_size"]
         self.train_loader = config["train_loader"]
         self.test_loader = config["test_loader"]
+
+        # The sampler works with the dataset object instead of the dataloader object
+        self.train_dataset = config["train_dataset"]
+        self.test_dataset = config["test_dataset"]
+        self.indexs = idxs
+        
+        # self.dict_users = config["dict_users"]
+        
         self.batch_size = self.train_loader.batch_size
         self.config = config
+        
+        
         # tqdm bar
         self.t_bar = None
         folder = config["results_dir"]
@@ -66,7 +91,15 @@ class Trainer():
         self.net.train()
         total_correct = 0.0
         total_loss = 0.0
-        len_train_set = len(self.train_loader.dataset)
+        
+        
+        # len_train_set = len(self.train_loader.dataset)
+        len_train_set = len(self.train_dataset)
+        # Override the train_loader with the sampled one if indexes are provided 
+        if self.indexs is not None:
+            self.train_loader = DataLoader(DatasetSplit(self.train_dataset, self.indexs), batch_size=self.batch_size, shuffle=True)
+        
+        # print(self.train_loader.dataset)
         for batch_idx, (x, y) in enumerate(self.train_loader):
             x = x.to(self.device)
             y = y.to(self.device)
@@ -81,8 +114,10 @@ class Trainer():
             total_loss += loss
             curr_acc = 100.0 * (total_correct / float(len_train_set))
             curr_loss = (total_loss / float(batch_idx))
+        
             t_bar.update(self.batch_size)
             t_bar.set_postfix_str(f"Acc {curr_acc:.3f}% Loss {curr_loss:.3f}")
+        
         total_acc = float(total_correct / len_train_set)
         return total_acc
 
@@ -99,6 +134,10 @@ class Trainer():
             train_acc = self.train_single_epoch(t_bar)
             # validate the output and save if it is the best so far
             val_acc = self.validate(epoch)
+            
+            # Save the intermediate model
+            # self.save(epoch, name='test_' + str(epoch))
+            
             if val_acc > best_acc:
                 best_acc = val_acc
                 self.save(epoch, name=self.best_model_file)
@@ -136,6 +175,7 @@ class Trainer():
     def save(self, epoch, name):
         torch.save({"model_state_dict": self.net.state_dict(), }, name)
 
+
 class BaseTrainer(Trainer):
 
     def calculate_loss(self, data, target):
@@ -145,7 +185,6 @@ class BaseTrainer(Trainer):
         loss.backward()
         self.optimizer.step()
         return output, loss
-
 
 class KDTrainer(Trainer):
     def __init__(self, s_net, t_net, config):
@@ -159,13 +198,19 @@ class KDTrainer(Trainer):
         lambda_ = self.config["lambda_student"]
         T = self.config["T_student"]
         # Standard Learning Loss ( Classification Loss)
-        loss = self.loss_fun(out_s, target)
+        # Remove the Standard learning loss for unlabel case
+        # loss = self.loss_fun(out_s, target)
+
         # Knowledge Distillation Loss
-        batch_size = target.shape[0]
+        # batch_size = target.shape[0]
+        batch_size = out_s.shape[0]
         s_max = F.log_softmax(out_s / T, dim=1)
         t_max = F.softmax(out_t / T, dim=1)
+        # print(f"s_max: {s_max.shape} t_max: {t_max.shape}")
+
         loss_kd = self.kd_fun(s_max, t_max) / batch_size
-        loss = (1 - lambda_) * loss + lambda_ * T * T * loss_kd
+        # loss = (1 - lambda_) * loss + lambda_ * T * T * loss_kd
+        loss = loss_kd
         return loss
 
     def calculate_loss(self, data, target):
@@ -222,6 +267,7 @@ class MultiTrainer(KDTrainer):
         T = self.config["T_student"]
         # Knowledge Distillation Loss
         batch_size = target.shape[0]
+
         s_max = F.log_softmax(out_s / T, dim=1)
         t_max = F.softmax(out_t / T, dim=1)
         loss_kd = self.kd_fun(s_max, t_max) / batch_size
@@ -244,6 +290,42 @@ class MultiTrainer(KDTrainer):
         self.optimizer.step()
         return out_s, loss
 
+# For multiple teacher. 
+# It is similar to the MultiTrainer class just remove the learning from labels 
+class MultiTeacher(KDTrainer):
+    def __init__(self, s_net, t_nets, config):
+        super(MultiTeacher, self).__init__(s_net, s_net, config)
+        # the student net is the base net
+        self.s_net = self.net
+        self.t_nets = t_nets
+
+    def kd_loss(self, out_s, out_t):
+        T = self.config["T_student"]
+        # Knowledge Distillation Loss
+        # batch_size = target.shape[0]
+        batch_size = out_s.shape[0]
+        s_max = F.log_softmax(out_s / T, dim=1)
+        t_max = F.softmax(out_t / T, dim=1)
+        loss_kd = self.kd_fun(s_max, t_max) / batch_size
+        return loss_kd
+
+    def calculate_loss(self, data, target):
+        lambda_ = self.config["lambda_student"]
+        T = self.config["T_student"]
+        out_s = self.s_net(data)
+        # Standard Learning Loss ( Classification Loss)
+        # loss = self.loss_fun(out_s, target)
+        # Knowledge Distillation Loss
+        loss_kd = 0.0
+        for i, t_net in enumerate(self.t_nets):
+            out_t = t_net(data)
+            loss_kd += self.kd_loss(out_s, out_t)
+        loss_kd /= len(self.t_nets)
+        # loss = (1 - lambda_) * loss + lambda_ * T * T * loss_kd
+        loss = loss_kd
+        loss.backward()
+        self.optimizer.step()
+        return out_s, loss
 
 class BlindTrainer(KDTrainer):
     def __init__(self, s_net, t_net, config):

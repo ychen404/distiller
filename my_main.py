@@ -64,17 +64,11 @@ def setup_teacher(t_name, params, user):
     num_classes = params["num_classes"]
     t_net = create_model(t_name, num_classes, params["device"])
     print(f"t_name: {t_name}, type: {type(t_net)}")
-    # exit()
     teacher_config = params.copy()
     teacher_config["test_name"] = t_name + "_teacher"
-    # print(f":::::: teacher_config ::::::\n {teacher_config}")
-    # print(t_net)
     
-    # exit()
-
     dict_users = params['dict_users']
-    # print(f":::: dict_users[0] length: {len(teacher_config['dict_users'][0])}")
-    # teacher_trainer = BaseTrainer(t_net, config=teacher_config, idxs=dict_users[idx])
+
 
     if params["t_checkpoint"]:
         # Just validate the performance
@@ -114,7 +108,6 @@ def continue_training_teacher(t_net, t_name, params):
     print(f"t_name: {t_name}, type: {type(t_net)}")
     teacher_config = params.copy()
     teacher_config["test_name"] = t_name + "_teacher"
-    # print(f":::::: teacher_config ::::::\n {teacher_config}")
     
     teacher_trainer = BaseTrainer(t_net, config=teacher_config)
     teacher_trainer.train()
@@ -124,15 +117,6 @@ def continue_training_teacher(t_net, t_name, params):
     best_t_acc = teacher_trainer.validate()
     print(f":::::: best_t_acc: ::::::\n {best_t_acc}")
 
-    # # also save this information in a csv file for plotting
-    
-    # name = teacher_config["test_name"] + "_val"
-    # acc_file_name = params["results_dir"].joinpath(f"{name}.csv")
-    # with acc_file_name.open("w+") as acc_file:
-    #     acc_file.write("Training Loss,Validation Loss\n")
-    #     for _ in range(params["epochs"]):
-    #         acc_file.write(f"0.0,{best_t_acc}\n")
-        
     return t_net, best_teacher, best_t_acc
 
 def continue_training_multiteacher(t_nets, t_name, params):
@@ -144,14 +128,11 @@ def continue_training_multiteacher(t_nets, t_name, params):
         print(f"t_name: {t_name}, type: {type(t_net)}")
         teacher_config = params.copy()
         teacher_config["test_name"] = t_name + "_teacher"
-        # print(f":::::: teacher_config ::::::\n {teacher_config}")
         dict_users = params['dict_users']
         print(f":::: dict_users[0] length: {len(teacher_config['dict_users'][0])}")
 
         teacher_trainer = BaseTrainer(t_net, config=teacher_config, idxs=dict_users[idx])
         
-        # for k, v in teacher_config.items():
-        #     print(k, v)
         teacher_trainer.train()
         best_teacher = teacher_trainer.best_model_file
         print(f"best_teacher: {best_teacher}")
@@ -161,15 +142,7 @@ def continue_training_multiteacher(t_nets, t_name, params):
 
         best_teachers.append(best_teacher)
         best_t_accs.append(best_t_acc)
-    # # also save this information in a csv file for plotting
-    
-    # name = teacher_config["test_name"] + "_val"
-    # acc_file_name = params["results_dir"].joinpath(f"{name}.csv")
-    # with acc_file_name.open("w+") as acc_file:
-    #     acc_file.write("Training Loss,Validation Loss\n")
-    #     for _ in range(params["epochs"]):
-    #         acc_file.write(f"0.0,{best_t_acc}\n")
-        
+
     return t_nets, best_teachers, best_t_accs
 
 def setup_student(s_name, params):
@@ -262,10 +235,6 @@ def test_kdparam(s_net, t_net, params):
 def run_benchmarks(modes, params, params_student, s_name, t_name):
     results = {}    
     print(f"### run_benchmark ###\n")
-    # print(f"params {params}\n")
-    
-    # Training the teacher model
-    # t_net, pretrained_teacher, best_t_acc = setup_teacher(t_name, params)
     
     # Parse the mode 
     mode = modes[0]
@@ -273,18 +242,13 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
     mode = mode.lower()
 
     # Setup teacher models
-        
     t_nets = []
     print(f"params['num_users'] = {params['num_users']}")
-    # exit()
+
     for user in range(params['num_users']):
         print(f"Setting up the {user + 1}th teacher\n")
         t_net, _, _ = setup_teacher(t_name, params, user)
         t_nets.append(t_net)
-    # t_net, _, _ = setup_teacher(t_name, params)
-    # t_net_1, _, _ = setup_teacher(t_name, params)
-    
-    # t_nets = [t_net, t_net_1]
 
     params_s = params_student
     print(f"params_s dict_users: {len(params_s['dict_users'])}")
@@ -317,7 +281,6 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
             exit()
     
     # Dump the overall results
-    # print(f"Best results teacher {t_name}: {best_t_acc}")
         for name, acc in results.items():
             print(f"Best results for {s_name} with {name} method: {acc}")
             # Save the test accuracy at the end of the training
@@ -325,46 +288,6 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
             with final_acc_file_name.open("w+") as acc_file:
                 acc_file.write("Test accuracy\n")
                 acc_file.write(f"{acc}\n")
-                
-        
-
-##### Commented out the support of multiple modes ######
-    # for mode in modes:
-    #     print(f"modes = {modes}")
-    #     mode = mode.lower()
-        
-    #     # params_s = params.copy()
-    #     params_s = params_student
-    #     print(f"params_s: {params_s}")
-    #     # reset the teacher
-    #     # why reset the teacher again? Comment out for now
-    #     # t_net = util.load_checkpoint(t_net, best_teacher, params["device"])
-    
-    #     # load the student and create a results directory for the mode
-    #     s_net = setup_student(s_name, params)
-    #     print(f"s_name: {s_name}")
-    #     params_s["test_name"] = s_name
-    #     params_s["results_dir"] = params_s["results_dir"].joinpath(mode)
-    #     print(f"s_name: {s_name}")
-    #     util.check_dir(params_s["results_dir"])
-    #     # start the test
-    #     try:
-    #         # Haven't seen this way of calling a function before. 
-    #         # It is quite convenient but not easy to read
-            
-    #         # run_test = globals()[f"test_{mode}"]
-    #         # results[mode] = run_test(s_net, t_net, params_s)
-    #         # call the function i need explicitly
-    #         # results[mode] = test_kd(s_net, t_net, params_s)
-    #         results[mode] = my_test_kd(s_net, t_net, params_s)
-    #     except KeyError:
-    #         raise RuntimeError(f"Training mode {mode} not supported!")
-        
-    # # Dump the overall results
-    # # print(f"Best results teacher {t_name}: {best_t_acc}")
-    # for name, acc in results.items():
-    #     print(f"Best results for {s_name} with {name} method: {acc}")
-##### Commented out the support of multiple modes ######
 
 def start_evaluation(args):
     device = util.setup_torch()
