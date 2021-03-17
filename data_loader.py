@@ -8,6 +8,7 @@ from torch.utils.data import Dataset
 NUM_WORKERS = 4
 
 
+
 class TensorImgSet(Dataset):
     """TensorDataset with support of transforms.
     """
@@ -29,7 +30,6 @@ class TensorImgSet(Dataset):
     def __len__(self):
         return self.len
 
-
 def load_cifar_10_1():
     # @article{recht2018cifar10.1,
     #  author = {Benjamin Recht and Rebecca Roelofs and Ludwig Schmidt
@@ -49,8 +49,23 @@ def load_cifar_10_1():
     return imagedata, torch.Tensor(labels).long()
 
 
+def cifar_iid(dataset, num_users):
+    """
+    Sample I.I.D. client data from CIFAR10 dataset
+    :param dataset:
+    :param num_users:
+    :return: dict of image index
+    """
+    num_items = int(len(dataset)/num_users)
+    dict_users, all_idxs = {}, [i for i in range(len(dataset))]
+    for i in range(num_users):
+        dict_users[i] = set(np.random.choice(all_idxs, num_items, replace=False))
+        all_idxs = list(set(all_idxs) - dict_users[i])
+    return dict_users
+
+
 def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
-              use_cifar_10_1=False):
+              use_cifar_10_1=False, num_users=2):
 
     if num_classes == 10:
         print("Loading CIFAR10...")
@@ -73,6 +88,10 @@ def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
     trainset = dataset(root=dataset_dir, train=True,
                        download=True, transform=train_transform)
 
+
+    # Get the dict_users
+    dict_users = cifar_iid(trainset, num_users)
+
     test_transform = transforms.Compose([
         transforms.ToTensor(),
         normalize,
@@ -91,8 +110,11 @@ def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
                                                batch_size=batch_size,
                                                num_workers=NUM_WORKERS,
                                                pin_memory=True, shuffle=True)
+
+
     test_loader = torch.utils.data.DataLoader(testset,
                                               batch_size=batch_size,
                                               num_workers=NUM_WORKERS,
                                               pin_memory=True, shuffle=False)
-    return train_loader, test_loader
+
+    return train_loader, test_loader, trainset, testset
