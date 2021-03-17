@@ -7,8 +7,6 @@ from torch.utils.data import Dataset
 
 NUM_WORKERS = 4
 
-
-
 class TensorImgSet(Dataset):
     """TensorDataset with support of transforms.
     """
