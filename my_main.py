@@ -30,6 +30,8 @@ def parse_arguments():
                         type=int, help="batch_size")
     parser.add_argument("--num_users", default=2,
                         type=int, help="number of users")                    
+    parser.add_argument("--edge_distillation", default=1,
+                        type=int, help="enable edge distillation")
     parser.add_argument("--learning-rate", default=0.1,
                         type=float, help="initial learning rate")
     parser.add_argument("--momentum", default=0.9,
@@ -245,6 +247,13 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
     t_nets = []
     print(f"params['num_users'] = {params['num_users']}")
 
+    # added test_name for the teacher model on edge distillation
+    # params["test_name"] = t_name
+    # params["results_dir"] = params["results_dir"].joinpath(mode)
+    # print(f"t_name: {t_name}")
+    # util.check_dir(params["results_dir"])
+
+    # Step 1: Teacher model initial training with local data
     for user in range(params['num_users']):
         print(f"Setting up the {user + 1}th teacher\n")
         t_net, _, _ = setup_teacher(t_name, params, user)
@@ -264,6 +273,8 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
     print(f"s_name: {s_name}")
     util.check_dir(params_s["results_dir"])
 
+    params["test_name"] = s_name
+
     for i in range(1, params["communication_round"]+1):
     # Knowledge distillation
         print(f"Starting {i} global epoch")
@@ -274,8 +285,33 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
             continue_training_teacher(_t_net, t_name, params)
         elif mode == "multiteacher_kd":
             print("==== Running multiteacher_kd mode ====\n")
-            results[mode], _s_net, _t_nets = my_test_multi_teacher_kd(s_net, t_nets, params_s)
-            continue_training_multiteacher(_t_nets, t_name, params)
+            if params["edge_distillation"] == 1:
+                print(f"++++ Edge distillation is enabled ++++")
+                # Step 2: teacher -> student distillation
+                results[mode], _s_net, _t_nets = my_test_multi_teacher_kd(s_net, t_nets, params_s)
+                
+                ## Try to add edge distillation 3/17, move the this step behind the edge distillation
+                # Step 1: Teacher model continue to local training
+                # continue_training_multiteacher(_t_nets, t_name, params)
+                
+                # Step 3: student -> teacher distillation on each teacher model
+                # swap the position of the teacher and the student
+                _t_nets_edge_distillation = []
+                for t_net in _t_nets:
+                    t_net = defrost_teacher(t_net)
+                    _, t, _ = my_test_kd(t_net, _s_net, params)
+                    _t_nets_edge_distillation.append(t)
+                _s_net = defrost_teacher(_s_net)
+                # Step 1: Teacher model continue to local training
+                continue_training_multiteacher(_t_nets_edge_distillation, t_name, params)
+            else:
+                print(f"---- Edge distillation is disabled ----")
+                # Step 2: teacher -> student distillation
+                results[mode], _s_net, _t_nets = my_test_multi_teacher_kd(s_net, t_nets, params_s)                
+                # Step 1: Teacher model continue to local training
+                continue_training_multiteacher(_t_nets, t_name, params)
+                
+
         else:
             print("No kd mode selected")
             exit()
@@ -321,6 +357,7 @@ def start_evaluation(args):
         "t_checkpoint": args.t_checkpoint,
         "results_dir": results_dir,
         "num_users": args.num_users,
+        "edge_distillation": args.edge_distillation,
         # "train_loader": train_loader,
         # "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
         "train_loader": train_loader, # used when training teacher from scratch
