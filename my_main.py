@@ -9,13 +9,16 @@ from plot import plot_results
 import util
 import torch.nn as nn
 from sampling import cifar_iid
+import psutil
+import os
+import pdb
 
 BATCH_SIZE = 128
 TESTFOLDER = "results"
 USE_ID = True
 COMMUNICATION_ROUND = 10
 EPOCHS = 100
-
+NTHREAD = 4
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -28,8 +31,17 @@ def parse_arguments():
                         help="dataset. can be either cifar10 or cifar100")
     parser.add_argument("--batch-size", default=BATCH_SIZE,
                         type=int, help="batch_size")
+    parser.add_argument("--nthread", default=NTHREAD,
+                        type=int, help="number of threads for dataloader")                    
+    parser.add_argument('--gpu_id', default='0', type=str,
+                    help='id(s) for CUDA_VISIBLE_DEVICES')
+    parser.add_argument('--ngpu', default=1, type=int,
+                    help='number of GPUs to use for training')
+    
     parser.add_argument("--num_users", default=2,
-                        type=int, help="number of users")                    
+                        type=int, help="number of users") 
+    parser.add_argument("--workspace", default="",
+                        type=str, help="The prefix for the output files")                    
     parser.add_argument("--edge_distillation", default=1,
                         type=int, help="enable edge distillation")
     parser.add_argument("--learning-rate", default=0.1,
@@ -65,23 +77,22 @@ def setup_teacher(t_name, params, user):
     print(f"### Setting up teacher")
     num_classes = params["num_classes"]
     t_net = create_model(t_name, num_classes, params["device"])
-    print(f"t_name: {t_name}, type: {type(t_net)}")
+    # print(f"t_name: {t_name}, type: {type(t_net)}")
     teacher_config = params.copy()
     teacher_config["test_name"] = t_name + "_teacher"
     
     dict_users = params['dict_users']
 
-
     if params["t_checkpoint"]:
         # Just validate the performance
-        print("---------- Loading Teacher -------")
+        print("---------- Loading Edge Model -------")
         # pretrained_teacher = params["t_checkpoint"]
         # stick with the same naming of best_teacher 
         best_teacher = params["t_checkpoint"]
         print(f"pretrained teacher: {best_teacher}" )
     else:
         # Teacher training
-        print("---------- Training Teacher -------")
+        print("---------- Training Edge Model -------")
         teacher_trainer = BaseTrainer(t_net, config=teacher_config, idxs=dict_users[user])
         teacher_trainer.train()
         best_teacher = teacher_trainer.best_model_file
@@ -94,8 +105,10 @@ def setup_teacher(t_name, params, user):
     print(f":::::: best_t_acc: ::::::\n {best_t_acc}")
 
     # also save this information in a csv file for plotting
-    
+    #     
     name = teacher_config["test_name"] + "_val"
+    ## resnet8_test is the "test_name"
+
     acc_file_name = params["results_dir"].joinpath(f"{name}.csv")
     with acc_file_name.open("w+") as acc_file:
         acc_file.write("Training Loss,Validation Loss\n")
@@ -106,7 +119,7 @@ def setup_teacher(t_name, params, user):
    
 def continue_training_teacher(t_net, t_name, params):
     
-    t_net = defrost_teacher(t_net)
+    t_net = defrost_net(t_net)
     print(f"t_name: {t_name}, type: {type(t_net)}")
     teacher_config = params.copy()
     teacher_config["test_name"] = t_name + "_teacher"
@@ -126,7 +139,7 @@ def continue_training_multiteacher(t_nets, t_name, params):
     best_teachers = []
     best_t_accs = []
     for idx, t_net in enumerate(t_nets):
-        t_net = defrost_teacher(t_net)
+        t_net = defrost_net(t_net)
         print(f"t_name: {t_name}, type: {type(t_net)}")
         teacher_config = params.copy()
         teacher_config["test_name"] = t_name + "_teacher"
@@ -153,32 +166,24 @@ def setup_student(s_name, params):
     s_net = create_model(s_name, num_classes, params["device"])
     return s_net
 
-def freeze_teacher(t_net):
-    # freeze the layers of the teacher
-    for param in t_net.parameters():
+def freeze_net(net):
+    # freeze the layers of a model
+    for param in net.parameters():
         param.requires_grad = False
     # set the teacher net into evaluation mode
-    t_net.eval()
-    return t_net
+    net.eval()
+    return net
 
-def defrost_teacher(t_net):
+def defrost_net(net):
     # freeze the layers of the teacher
-    for param in t_net.parameters():
+    for param in net.parameters():
         param.requires_grad = True
     # set the teacher net into evaluation mode
-    t_net.train()
-    return t_net
-
-
-def test_nokd(s_net, t_net, params):
-    print("---------- Training NOKD -------")
-    nokd_config = params.copy()
-    nokd_trainer = BaseTrainer(s_net, config=nokd_config)
-    best_acc = nokd_trainer.train()
-    return best_acc
+    net.train()
+    return net
 
 def test_kd(s_net, t_net, params):
-    t_net = freeze_teacher(t_net)
+    t_net = freeze_net(t_net)
     print("---------- Training KD -------")
     kd_config = params.copy()
     kd_trainer = KDTrainer(s_net, t_net=t_net, config=kd_config)
@@ -186,25 +191,26 @@ def test_kd(s_net, t_net, params):
     
     return best_acc
 
-def my_test_kd(s_net, t_net, params):
-    t_net = freeze_teacher(t_net)
-    print("---------- Training KD -------")
+def single_edge_kd(s_net, t_net, params):
+    t_net = freeze_net(t_net)
+    print("---------- KD: single edge model -> cloud model -------")
     kd_config = params.copy()
     kd_trainer = KDTrainer(s_net, t_net=t_net, config=kd_config)
     best_acc = kd_trainer.train()
     
     return best_acc, s_net, t_net
 
-def my_test_multi_teacher_kd(s_net, t_nets, params):
-    frozen_t_nets = []
-    print("---------- Training MULTITEACHER -------")
-    for t_net in t_nets:
-        frozen_t_nets.append(freeze_teacher(t_net))
+def multi_edge_kd(cloud_net, edge_nets, params):
+    # Use CIFAR-100 unlabeled data for KD with multiple edge models
+    frozen_edge_nets = []
+    print("---------- KD: multiple edge models -> cloud model -------")
+    for t_net in edge_nets:
+        frozen_edge_nets.append(freeze_net(t_net))
         kd_config = params.copy()
 
-    kd_trainer = MultiTeacher(s_net, t_nets=frozen_t_nets, config=kd_config)
+    kd_trainer = MultiTeacher(cloud_net, t_nets=frozen_edge_nets, config=kd_config)
     best_acc = kd_trainer.train()
-    return best_acc, s_net, t_nets
+    return best_acc, cloud_net, edge_nets
 
 def test_kdparam(s_net, t_net, params):
     temps = [1, 5, 10, 15, 20]
@@ -236,22 +242,15 @@ def test_kdparam(s_net, t_net, params):
 
 def run_benchmarks(modes, params, params_student, s_name, t_name):
     results = {}    
-    print(f"### run_benchmark ###\n")
-    
+   
     # Parse the mode 
     mode = modes[0]
-    print(f"mode: {mode}")
+    # print(f"mode: {mode}")
     mode = mode.lower()
 
     # Setup teacher models
     t_nets = []
     print(f"params['num_users'] = {params['num_users']}")
-
-    # added test_name for the teacher model on edge distillation
-    # params["test_name"] = t_name
-    # params["results_dir"] = params["results_dir"].joinpath(mode)
-    # print(f"t_name: {t_name}")
-    # util.check_dir(params["results_dir"])
 
     # Step 1: Teacher model initial training with local data
     for user in range(params['num_users']):
@@ -265,30 +264,29 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
 
     # Setup the student 
     s_net = setup_student(s_name, params)
-    print(f"s_name: {s_name}")
     
     # Setup directories
     params_s["test_name"] = s_name
     params_s["results_dir"] = params_s["results_dir"].joinpath(mode)
-    print(f"s_name: {s_name}")
+    
     util.check_dir(params_s["results_dir"])
 
     params["test_name"] = s_name
 
     for i in range(1, params["communication_round"]+1):
     # Knowledge distillation
-        print(f"Starting {i} global epoch")
-        # Single teacher and student mode is working
+        print(f"Starting {i} communication_round")
+        
         if mode == "kd":
             print("==== Running kd mode ====\n")
-            results[mode], _s_net, _t_net = my_test_kd(s_net, t_net, params_s)
+            results[mode], _s_net, _t_net = single_edge_kd(s_net, t_net, params_s)
             continue_training_teacher(_t_net, t_name, params)
         elif mode == "multiteacher_kd":
             print("==== Running multiteacher_kd mode ====\n")
             if params["edge_distillation"] == 1:
                 print(f"++++ Edge distillation is enabled ++++")
                 # Step 2: teacher -> student distillation
-                results[mode], _s_net, _t_nets = my_test_multi_teacher_kd(s_net, t_nets, params_s)
+                results[mode], _s_net, _t_nets = multi_edge_kd(s_net, t_nets, params_s)
                 
                 ## Try to add edge distillation 3/17, move the this step behind the edge distillation
                 # Step 1: Teacher model continue to local training
@@ -298,16 +296,16 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
                 # swap the position of the teacher and the student
                 _t_nets_edge_distillation = []
                 for t_net in _t_nets:
-                    t_net = defrost_teacher(t_net)
-                    _, t, _ = my_test_kd(t_net, _s_net, params)
+                    t_net = defrost_net(t_net)
+                    _, t, _ = single_edge_kd(t_net, _s_net, params)
                     _t_nets_edge_distillation.append(t)
-                _s_net = defrost_teacher(_s_net)
+                _s_net = defrost_net(_s_net)
                 # Step 1: Teacher model continue to local training
                 continue_training_multiteacher(_t_nets_edge_distillation, t_name, params)
             else:
                 print(f"---- Edge distillation is disabled ----")
                 # Step 2: teacher -> student distillation
-                results[mode], _s_net, _t_nets = my_test_multi_teacher_kd(s_net, t_nets, params_s)                
+                results[mode], _s_net, _t_nets = multi_edge_kd(s_net, t_nets, params_s)                
                 # Step 1: Teacher model continue to local training
                 continue_training_multiteacher(_t_nets, t_name, params)
                 
@@ -326,12 +324,14 @@ def run_benchmarks(modes, params, params_student, s_name, t_name):
                 acc_file.write(f"{acc}\n")
 
 def start_evaluation(args):
+    PID = os.getpid()
+    print(f"PID: {PID}")
     device = util.setup_torch()
     num_classes = 100 if args.dataset == "cifar100" else 10
     num_classes_distillation = 100
     
 
-
+    
     train_loader, test_loader, train_dataset, test_dataset = get_cifar(num_classes,
                                           batch_size=args.batch_size, num_users=args.num_users)
     dict_users = cifar_iid(train_dataset, args.num_users)
@@ -342,7 +342,9 @@ def start_evaluation(args):
 
     # for benchmarking, decided whether we want to use unique test folders
     if USE_ID:
-        test_id = util.generate_id()
+        # test_id = util.generate_id()
+        test_id = args.workspace
+
     else:
         test_id = ""
     results_dir = Path(args.results_dir).joinpath(test_id)
@@ -357,6 +359,7 @@ def start_evaluation(args):
         "t_checkpoint": args.t_checkpoint,
         "results_dir": results_dir,
         "num_users": args.num_users,
+        "nthread": args.nthread,
         "edge_distillation": args.edge_distillation,
         # "train_loader": train_loader,
         # "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
@@ -393,6 +396,7 @@ def start_evaluation(args):
         "modes": args.modes,
         "t_checkpoint": args.t_checkpoint,
         "results_dir": results_dir,
+        "nthread": args.nthread,
         # "train_loader": train_loader,
         "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
         # "train_loader": train_loader, # used when training teacher from scratch
@@ -422,8 +426,11 @@ def start_evaluation(args):
     }
 
     test_conf_name = results_dir.joinpath("test_config.json")
+    
     util.dump_json_config(test_conf_name, params)
+    
     run_benchmarks(args.modes, params, params_student, args.s_name, args.t_name)
+    
     plot_results(results_dir, test_id=test_id)
 
 

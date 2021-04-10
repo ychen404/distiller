@@ -97,12 +97,13 @@ class Trainer():
         len_train_set = len(self.train_dataset)
         # Override the train_loader with the sampled one if indexes are provided 
         if self.indexs is not None:
-            self.train_loader = DataLoader(DatasetSplit(self.train_dataset, self.indexs), batch_size=self.batch_size, shuffle=True)
+            self.train_loader = DataLoader(DatasetSplit(self.train_dataset, self.indexs), batch_size=self.batch_size, shuffle=True, \
+                num_workers=self.config["nthread"], pin_memory=torch.cuda.is_available())
         
         # print(self.train_loader.dataset)
         for batch_idx, (x, y) in enumerate(self.train_loader):
-            x = x.to(self.device)
-            y = y.to(self.device)
+            x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
             self.optimizer.zero_grad()
 
             # this function is implemented by the subclass

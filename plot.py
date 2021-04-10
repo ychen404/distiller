@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import pdb
 
 import util
 # Use darkgrid instead
@@ -104,22 +105,30 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
     epochs = config["epochs"]
     teacher_name = config["teacher_name"] + "_teacher"
     student_name = config["student_name"]
+    print(f"teacher_name: {teacher_name}, student_name: {student_name}")
     dfs = {}
+    
     for mode in modes:
         mode = mode.lower()
         mode_path = data_dir.joinpath(mode)
+        # mode_path example: results/test_result/cifar10/multiteacher_kd
+        
         csv_path = mode_path.joinpath(f"{student_name}_train.csv")
+        # csv_path example: results/test_result/cifar10/multiteacher_kd/resnet8_train.csv
+
         try:
             dfs[mode] = read_csv(csv_path)
         except FileNotFoundError:
             print(f"Results for {mode} not found, ignoring...")
     teacher_path = data_dir.joinpath(f"{teacher_name}_val.csv")
     dfs["teacher"] = read_csv(teacher_path)
-
-
+    pdb.set_trace()
     df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
-    print(f"df={df}")
+    
+    print(f"{df}")
+
     print(df.max().sort_values(ascending=True))
+
     # df = compute_rolling_df_mean(df, 10)
     # print(f"df_mean={df}")
 
@@ -147,4 +156,4 @@ if __name__ == '__main__':
     args = parse_arguments()
     # plot_results(args.data_dir)
     # To plot a specific result
-    plot_results("results/clzz/cifar10", plot_dir=PLOT_DIR, test_id="clzz")
+    plot_results("results/test_result/cifar10", plot_dir=PLOT_DIR, test_id="test_result")

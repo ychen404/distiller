@@ -4,6 +4,7 @@ import cifar10sm
 import vision
 import wide_resnet as wide
 import torch.nn as nn
+import torch.backends.cudnn as cudnn
 
 
 model_dict = {
@@ -77,11 +78,15 @@ def create_model(name, num_classes, device):
     # Try to use one gpu only to see about the speed -> one gpu is faster
 
     # always use dataparallel for now
-    # model = torch.nn.DataParallel(model)  
-    # device_count = torch.cuda.device_count()
-    # print(f"Using {device_count} GPU(s).")
+    
+    model = torch.nn.DataParallel(model)  
+    device_count = torch.cuda.device_count()
+    cudnn.benchmark = True
+
+    print(f"Using {device_count} GPU(s).")
     # # copy to cuda if activated 
     model = model.to(device)
+    
     return model
 
 
