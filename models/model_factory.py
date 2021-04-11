@@ -67,23 +67,19 @@ model_dict = {
 
 def create_model(name, num_classes, device):
     model_cls = model_dict[name]
-    print(f"Building model {name}...", end='')
+    # print(f"Building model {name}...", end='')
     model = model_cls(num_classes=num_classes)
-    print(f"type {type(model)}")
+    # print(f"type {type(model)}")
+    
     total_params = sum(p.numel() for p in model.parameters())
     layers = len(list(model.modules()))
-    print(f" total parameters: {total_params}, layers {layers}")
+    # print(f" total parameters: {total_params}, layers {layers}")
     
-    
-    # Try to use one gpu only to see about the speed -> one gpu is faster
-
     # always use dataparallel for now
     
     model = torch.nn.DataParallel(model)  
     device_count = torch.cuda.device_count()
     cudnn.benchmark = True
-
-    print(f"Using {device_count} GPU(s).")
     # # copy to cuda if activated 
     model = model.to(device)
     

@@ -33,7 +33,7 @@ def parse_arguments():
     return args
 
 
-def parse_config(conf_dir, name):
+def parse_config_json(conf_dir, name):
     file_name = conf_dir.joinpath(f"{name}.json")
     with open(file_name) as conf_file:
         return json.load(conf_file)
@@ -94,16 +94,16 @@ def read_csv(csv_path):
     return df
 
 
-def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
+def plot_results(data_dir, plot_dir=PLOT_DIR, test_id="", suffix="_edge"):
     data_dir = Path(f"{data_dir}")
     print(f"data_dir={data_dir}")
     conf_name = "test_config"
-    config = parse_config(data_dir, conf_name)
+    config = parse_config_json(data_dir, conf_name)
     print(f"config={config} test_id={test_id}")
 
     modes = config["modes"]
     epochs = config["epochs"]
-    teacher_name = config["teacher_name"] + "_teacher"
+    teacher_name = config["teacher_name"] + suffix
     student_name = config["student_name"]
     print(f"teacher_name: {teacher_name}, student_name: {student_name}")
     dfs = {}
@@ -112,7 +112,6 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
         mode = mode.lower()
         mode_path = data_dir.joinpath(mode)
         # mode_path example: results/test_result/cifar10/multiteacher_kd
-        
         csv_path = mode_path.joinpath(f"{student_name}_train.csv")
         # csv_path example: results/test_result/cifar10/multiteacher_kd/resnet8_train.csv
 
@@ -120,9 +119,10 @@ def plot_results(data_dir, plot_dir=PLOT_DIR, test_id=""):
             dfs[mode] = read_csv(csv_path)
         except FileNotFoundError:
             print(f"Results for {mode} not found, ignoring...")
+    
     teacher_path = data_dir.joinpath(f"{teacher_name}_val.csv")
     dfs["teacher"] = read_csv(teacher_path)
-    pdb.set_trace()
+    # pdb.set_trace()
     df = pd.concat(dfs.values(), axis=1, keys=dfs.keys())
     
     print(f"{df}")
@@ -156,4 +156,4 @@ if __name__ == '__main__':
     args = parse_arguments()
     # plot_results(args.data_dir)
     # To plot a specific result
-    plot_results("results/test_result/cifar10", plot_dir=PLOT_DIR, test_id="test_result")
+    plot_results("results/test_result/cifar10", plot_dir=PLOT_DIR, test_id="test_result", suffix="_edge")

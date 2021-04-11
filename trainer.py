@@ -60,7 +60,6 @@ class Trainer():
         self.test_dataset = config["test_dataset"]
         self.indexs = idxs
         
-        # self.dict_users = config["dict_users"]
         
         self.batch_size = self.train_loader.batch_size
         self.config = config
