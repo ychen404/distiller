@@ -68,18 +68,16 @@ model_dict = {
 def create_model(name, num_classes, device):
     model_cls = model_dict[name]
     # print(f"Building model {name}...", end='')
-    model = model_cls(num_classes=num_classes)
-    # print(f"type {type(model)}")
-    
+    model = model_cls(num_classes=num_classes)    
     total_params = sum(p.numel() for p in model.parameters())
     layers = len(list(model.modules()))
     # print(f" total parameters: {total_params}, layers {layers}")
     
     # always use dataparallel for now
-    
     model = torch.nn.DataParallel(model)  
     device_count = torch.cuda.device_count()
     cudnn.benchmark = True
+    
     # # copy to cuda if activated 
     model = model.to(device)
     

@@ -133,3 +133,7 @@ teacher_assistant/data
 data
 lightning_logs
 *.tar
+
+plots
+results
+results_archive
