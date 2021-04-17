@@ -63,7 +63,7 @@ def cifar_iid(dataset, num_users):
 
 
 def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
-              use_cifar_10_1=False, num_users=2):
+              use_cifar_10_1=False):
 
     if num_classes == 10:
         print("Loading CIFAR10...")
@@ -86,9 +86,8 @@ def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
     trainset = dataset(root=dataset_dir, train=True,
                        download=True, transform=train_transform)
 
-
-    # Get the dict_users
-    dict_users = cifar_iid(trainset, num_users)
+    # # Get the dict_users
+    # dict_users = cifar_iid(trainset, num_users)
 
     test_transform = transforms.Compose([
         transforms.ToTensor(),
@@ -96,11 +95,16 @@ def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
     ])
 
     # Use the normal cifar 10 testset or a new one to test true generalization
-    if use_cifar_10_1 and num_classes == 10:
-        imagedata, labels = load_cifar_10_1()
-        testset = TensorImgSet((imagedata, labels), transform=test_transform)
-    else:
-        testset = dataset(root=dataset_dir, train=False,
+    # skip this for now
+    # if use_cifar_10_1 and num_classes == 10:
+    #     imagedata, labels = load_cifar_10_1()
+    #     testset = TensorImgSet((imagedata, labels), transform=test_transform)
+    # else:
+    #     testset = dataset(root=dataset_dir, train=False,
+    #                       download=True,
+    #                       transform=test_transform)
+
+    testset = dataset(root=dataset_dir, train=False,
                           download=True,
                           transform=test_transform)
 

@@ -5,7 +5,7 @@ from torch import nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
 from optimizer import get_optimizer, get_scheduler
-
+import pdb
 
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
@@ -20,6 +20,7 @@ class DatasetSplit(Dataset):
         return image, label
 
 def init_progress_bar(train_loader):
+    # pdb.set_trace()
     batch_size = train_loader.batch_size
     bar_format = "{desc}{percentage:3.0f}%"
     # bar_format += "|{bar}|"
@@ -51,19 +52,44 @@ class Trainer():
         self.scheduler = self.sched_cls(self.optimizer, **self.sched_args)
 
         self.loss_fun = nn.CrossEntropyLoss()
-        self.local_bs = config["batch_size"]
-        self.train_loader = config["train_loader"]
-        self.test_loader = config["test_loader"]
+        # self.local_bs = config["batch_size"]
+        # remove the full data loader
 
+        self.test_loader = config["test_loader"]
+       
         # The sampler works with the dataset object instead of the dataloader object
-        self.train_dataset = config["train_dataset"]
-        self.test_dataset = config["test_dataset"]
+        self.model_type = config["model_type"]
+        print(f"Model type: {self.model_type}")
+        # There is no train_dataset for cloud model; it loads the cifar100 train loader directly
+        if self.model_type == "edge":
+            self.train_dataset = config["train_dataset"]
+            self.num_users = config["num_users"]
+        else:
+            self.num_users = 1
+        
         self.indexs = idxs
+        
          
-        self.batch_size = self.train_loader.batch_size
+        # self.batch_size = self.train_loader.batch_size
+        self.batch_size = config["batch_size"]
         self.config = config
         
-        
+
+        # Override the train_loader with the sampled one if indexes are provided 
+        if self.model_type == "edge":
+            # edge models need data partition
+            self.data_split = DatasetSplit(self.train_dataset, self.indexs)
+            self.train_loader = DataLoader(self.data_split, batch_size=self.batch_size, 
+                    shuffle=True, num_workers=self.config["nthread"], pin_memory=torch.cuda.is_available())
+
+        elif self.model_type == "cloud":
+            # cloud model uses cifar100 train loader from the config file
+            self.train_loader = config["train_loader"]
+
+
+        # self.train_loader = DataLoader(DatasetSplit(self.train_dataset, self.indexs), batch_size=self.batch_size, 
+        #         shuffle=True, num_workers=self.config["nthread"], pin_memory=torch.cuda.is_available())
+
         # tqdm bar
         self.t_bar = None
         folder = config["results_dir"]
@@ -90,17 +116,21 @@ class Trainer():
         self.net.train()
         total_correct = 0.0
         total_loss = 0.0
+               
+
+        if self.model_type == "edge":
+            len_train_set = len(self.train_dataset) / self.num_users
         
-        
-        # len_train_set = len(self.train_loader.dataset)
-        len_train_set = len(self.train_dataset)
-        # Override the train_loader with the sampled one if indexes are provided 
-        if self.indexs is not None:
-            self.train_loader = DataLoader(DatasetSplit(self.train_dataset, self.indexs), batch_size=self.batch_size, shuffle=True, \
-                num_workers=self.config["nthread"], pin_memory=torch.cuda.is_available())
-        
+        else: 
+            len_train_set = len(self.train_loader.dataset)
+
+        # division = 20
+        # portion_data = len(self.train_loader) // division
         # print(self.train_loader.dataset)
+        # pdb.set_trace()
         for batch_idx, (x, y) in enumerate(self.train_loader):
+            # if batch_idx > portion_data:
+            #     break
             x = x.to(self.device, non_blocking=True)
             y = y.to(self.device, non_blocking=True)
             self.optimizer.zero_grad()
@@ -124,7 +154,6 @@ class Trainer():
     def train(self, current_round):
         epochs = self.config["epochs"]
 
-        best_acc = 0
         t_bar = init_progress_bar(self.train_loader)
         for epoch in range(epochs):
             # update progress bar
@@ -132,7 +161,7 @@ class Trainer():
             t_bar.set_description(f"Round {current_round} | Epoch {epoch}")
             # perform training
             train_acc = self.train_single_epoch(t_bar)
-            # validate the output and save if it is the best so far
+            # validate the output 
             val_acc = self.validate(current_round, epoch)
             
             # Save the intermediate model
@@ -140,17 +169,20 @@ class Trainer():
 
             # if val_acc > best_acc:
             #     best_acc = val_acc
+             
             self.save(epoch, name=self.model_file)
+
             # update the scheduler
             if self.scheduler:
                 self.scheduler.step()
+
             self.acc_file.write(f"{train_acc},{val_acc}\n")
             # print(f"acc_file, train_acc, val_acc: {self.acc_file}, {train_acc}, {val_acc}")
             # exit()
         tqdm.clear(t_bar)
         t_bar.close()
         self.acc_file.close()
-        return best_acc
+
 
     def validate(self, current_round, epoch=0):
         self.net.eval()
