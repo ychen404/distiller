@@ -104,12 +104,10 @@ def train_edge(current_round, t_net, edge_params, edge_name, partition_idx, edge
     # logger.info("Training edge model")
     # defrost because from the seoncd round the edge models are frozen during distillation
     t_net = defrost_net(t_net)
-    
     edge_config = edge_params.copy()
     edge_config["test_name"] = edge_name + edge_suffix
     dict_users = edge_params['dict_users']
     # pdb.set_trace()
-
 
     # Trainer wraps the training related functions together
     logger.debug(f"The partition idx is {partition_idx}")
@@ -150,14 +148,22 @@ def test_kd(s_net, t_net, params):
     
     return best_acc
 
-def single_edge_kd(current_round, s_net, t_net, params):
-    t_net = freeze_net(t_net)
-    logger.info("---------- one-to-one distillation -------")
-    kd_config = params.copy()
-    kd_trainer = KDTrainer(s_net, t_net=t_net, config=kd_config)
-    best_acc = kd_trainer.train(current_round)
+# def single_edge_kd(current_round, edge_net, cloud_net, edge_params, edge_name, partition_idx, edge_suffix):
+
+#     logger.info("---------- one-to-one distillation -------")
+#     cloud_net = freeze_net(cloud_net)
+#     kd_config = edge_params.copy()
     
-    return best_acc, s_net, t_net
+#     # Save the results after distillation separately for a better comparison
+#     kd_config["test_name"] = edge_name + edge_suffix
+#     dict_users = kd_config['dict_users']
+
+#     logger.debug(f"The partition idx is {partition_idx}")
+
+#     kd_trainer = KDTrainer(edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
+#     edge_acc = kd_trainer.train(current_round)
+    
+#     return edge_acc, edge_net, cloud_net
 
 def multi_edge_kd(current_round, cloud_net, edge_nets, params):
     # Use CIFAR-100 unlabeled data for KD with multiple edge models
@@ -227,7 +233,8 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             logger.info("==== Multiteacher_kd mode ====")
 
             # Multi edge models perform distillation to the cloud model
-            cloud_acc[mode], _cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, edge_nets, params_cloud)                
+            cloud_acc[mode], _cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
+                                                                    edge_nets, params_cloud)                
 
             if params_edge["edge_distillation"] == 0:
                 logger.info('Disabled edge distillation, do nothing here')
@@ -245,7 +252,16 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 logger.info('Enabled edge distillation')                              
                 # Return the all the edge models after performing edge distillation in case need it
                 # edge_config instead of edge_params is used here becase the test_name field is added to the edge_config only
-                _edge_nets_after_distillation = edge_distillation(current_round, _edge_nets, _cloud_net, edge_config)
+        
+                for user, partition_idx in enumerate (idxs_users):
+                    logger.info(f"Edge distillation {user + 1}th edge model")
+                    # edge_net, _, edge_config = train_edge(current_round, edge_nets[user], params_edge, e_name, 
+                    #                                             partition_idx, edge_suffix='_edge_'+ str(user))    
+                    _edge_nets_after_distillation = edge_distillation(current_round, edge_nets[user], _cloud_net, 
+                                                                            edge_config, e_name, partition_idx, edge_suffix='_edge_ds_'+ str(user))
+
+
+
 
         elif mode == "fedavg":
             # need to merge fedavg to here
@@ -257,24 +273,30 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     
     end = time.time()
     logger.debug(f"Time elapse: {(end - start)}")
+    results_dir_path = params_edge["results_dir"]
+    logger.info(f"The results are saved to {results_dir_path}")
 
+def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name, partition_idx, edge_suffix):
 
-def edge_distillation(current_round, _edge_nets, _cloud_net, params_edge):
+    edge_net = defrost_net(edge_net)
+    # logger.info("---------- Edge distillation -------")
+    cloud_net = freeze_net(cloud_net)
+    kd_config = params_edge.copy()
+    
+    # Save the results after distillation separately for a better comparison
+    kd_config["test_name"] = edge_name + edge_suffix
+    dict_users = kd_config['dict_users']
+    logger.debug(f"The partition idx is {partition_idx}")
 
-    _edge_nets_edge_distillation = []
+    kd_trainer = KDTrainer(s_net=edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
+    edge_acc = kd_trainer.train(current_round)
 
-    # Swap the teacher and the student model's position in the kd function
-    for edge_net in _edge_nets:
-        edge_net = defrost_net(edge_net)
-        _, edge_n, _ = single_edge_kd(current_round, edge_net, _cloud_net, params_edge)
-        _edge_nets_edge_distillation.append(edge_n)
-    _cloud_net = defrost_net(_cloud_net)
-
-    return _edge_nets_edge_distillation
+    return edge_net
 
 def start_evaluation(args):
     
-    device = util.setup_torch()
+    device = util.setup_torch(args.gpu_id)
+
     num_classes = 100 if args.dataset == "cifar100" else 10
     num_classes_distillation = 100
     
@@ -302,6 +324,7 @@ def start_evaluation(args):
     params_edge = {
         "epochs": args.epochs,
         "communication_round": args.communication_round,
+        "frac": args.frac,
         "modes": args.modes,
         "t_checkpoint": args.t_checkpoint,
         "results_dir": results_dir,

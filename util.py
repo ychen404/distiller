@@ -27,12 +27,14 @@ def check_support(models, supported):
     return True
 
 
-def setup_torch():
+def setup_torch(gpu_ids):
+    
+    os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
     use_cuda = torch.cuda.is_available()
     device = "cuda" if use_cuda else "cpu"
     if use_cuda:
         torch.backends.cudnn.benchmark = True
-    # Maximum determinism
+
     torch.manual_seed(1)
     print(f"Using {device} to train.")
     return device

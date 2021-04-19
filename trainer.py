@@ -221,8 +221,11 @@ class BaseTrainer(Trainer):
         return output, loss
 
 class KDTrainer(Trainer):
-    def __init__(self, s_net, t_net, config):
-        super(KDTrainer, self).__init__(s_net, config)
+    # def __init__(self, s_net, t_net, config):
+    #     super(KDTrainer, self).__init__(s_net, config)
+    # Inherite the idxs from Trainer
+    def __init__(self, s_net, t_net, config, idxs=None):
+        super(KDTrainer, self).__init__(s_net, config, idxs)
         # the student net is the base net
         self.s_net = self.net
         self.t_net = t_net
