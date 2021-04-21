@@ -4,6 +4,7 @@ import torchvision
 import torchvision.transforms as transforms
 import numpy as np
 from torch.utils.data import Dataset
+from timer import Timer
 
 NUM_WORKERS = 4
 
@@ -61,7 +62,7 @@ def cifar_iid(dataset, num_users):
         all_idxs = list(set(all_idxs) - dict_users[i])
     return dict_users
 
-
+@Timer(text='get_cifar in {:.4f} seconds')
 def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
               use_cifar_10_1=False):
 

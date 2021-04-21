@@ -15,6 +15,7 @@ import pdb
 import logging
 import time
 import numpy as np
+from timer import Timer
 
 BATCH_SIZE = 128
 TESTFOLDER = "results"
@@ -26,6 +27,7 @@ ACC_NAME = 'cloud_model_test_acc.csv'
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
 fmt_str = '[%(levelname)s] %(filename)s @ line %(lineno)d: %(message)s'
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Test parameters")
@@ -89,6 +91,7 @@ def parse_arguments():
 
     return args
 
+@Timer(text='setup_edge in {:.4f} seconds')
 def setup_edge(edge_name, edge_params):
     # Teacher Model
     logger.debug("Setting up edge model")
@@ -99,6 +102,7 @@ def setup_edge(edge_name, edge_params):
     
     return t_net
 
+@Timer(text='train_edge in {:.4f} seconds')
 def train_edge(current_round, t_net, edge_params, edge_name, partition_idx, edge_suffix):
     
     # logger.info("Training edge model")
@@ -117,12 +121,14 @@ def train_edge(current_round, t_net, edge_params, edge_name, partition_idx, edge
 
     return t_net, edge_ckpt, edge_config
 
+@Timer(text='setup_cloud in {:.4f} seconds')
 def setup_cloud(s_name, params):
     # Student Model
     num_classes = params["num_classes"]
     s_net = create_model(s_name, num_classes, params["device"])
     return s_net
 
+@Timer(text='free_net in {:.4f} seconds')
 def freeze_net(net):
     # freeze the layers of a model
     for param in net.parameters():
@@ -131,6 +137,7 @@ def freeze_net(net):
     net.eval()
     return net
 
+@Timer(text='defrost_net in {:.4f} seconds')
 def defrost_net(net):
     # freeze the layers of the teacher
     for param in net.parameters():
@@ -162,12 +169,14 @@ def test_kd(s_net, t_net, params):
 
 #     kd_trainer = KDTrainer(edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
 #     edge_acc = kd_trainer.train(current_round)
-    
 #     return edge_acc, edge_net, cloud_net
 
+@Timer(text='multi_edge_kd in {:.4f} seconds')
 def multi_edge_kd(current_round, cloud_net, edge_nets, params):
     # Use CIFAR-100 unlabeled data for KD with multiple edge models
     logger.info("---------- KD: multiple edge models teaching cloud model -------")
+    cloud_net = defrost_net(cloud_net)
+
     frozen_edge_nets = []
     for e_net in edge_nets:
         frozen_edge_nets.append(freeze_net(e_net))
@@ -176,6 +185,25 @@ def multi_edge_kd(current_round, cloud_net, edge_nets, params):
     kd_trainer = MultiTeacher(cloud_net, t_nets=frozen_edge_nets, config=kd_config)
     cloud_acc = kd_trainer.train(current_round)
     return cloud_acc, cloud_net, edge_nets
+
+@Timer(text='edge_distillation in {:.4f} seconds')
+def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name, partition_idx, edge_suffix):
+
+    edge_net = defrost_net(edge_net)
+    # logger.info("---------- Edge distillation -------")
+    cloud_net = freeze_net(cloud_net)
+    kd_config = params_edge.copy()
+    
+    # Save the results after distillation separately for a better comparison
+    kd_config["test_name"] = edge_name + edge_suffix
+    dict_users = kd_config['dict_users']
+    logger.debug(f"The partition idx is {partition_idx}")
+
+    kd_trainer = KDTrainer(s_net=edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
+    edge_acc = kd_trainer.train(current_round)
+
+    return edge_net
+
 
 def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
@@ -262,7 +290,6 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
 
 
-
         elif mode == "fedavg":
             # need to merge fedavg to here
             pass
@@ -276,22 +303,6 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     results_dir_path = params_edge["results_dir"]
     logger.info(f"The results are saved to {results_dir_path}")
 
-def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name, partition_idx, edge_suffix):
-
-    edge_net = defrost_net(edge_net)
-    # logger.info("---------- Edge distillation -------")
-    cloud_net = freeze_net(cloud_net)
-    kd_config = params_edge.copy()
-    
-    # Save the results after distillation separately for a better comparison
-    kd_config["test_name"] = edge_name + edge_suffix
-    dict_users = kd_config['dict_users']
-    logger.debug(f"The partition idx is {partition_idx}")
-
-    kd_trainer = KDTrainer(s_net=edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
-    edge_acc = kd_trainer.train(current_round)
-
-    return edge_net
 
 def start_evaluation(args):
     
