@@ -4,7 +4,7 @@ import torchvision
 import torchvision.transforms as transforms
 import numpy as np
 from torch.utils.data import Dataset
-from timer import Timer
+from utils.timer import Timer
 
 NUM_WORKERS = 4
 

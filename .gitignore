@@ -134,6 +134,7 @@ data
 lightning_logs
 *.tar
 
+*.csv
 plots
 results
 results_archive

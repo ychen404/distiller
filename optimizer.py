@@ -2,16 +2,28 @@
 import math
 import torch
 from torch import optim
+import pdb
 
 
 def get_optimizer(optim_str, params):
     optim_args = {}
-    optim_args["lr"] = params["learning_rate"]
 
     if optim_str.lower() == "sgd":
-        optim_args["momentum"] = params["momentum"]
-        optim_args["weight_decay"] = params["weight_decay"]
-        optim_args["nesterov"] = True
+        # optim_args["momentum"] = params["momentum"]
+        # optim_args["weight_decay"] = params["weight_decay"]
+        if params["model_type"] == "edge":
+        # add a switch to nesterov for edge models
+        # if no_nesterov is not set, use it by default
+            optim_args["momentum"] = params["momentum"]
+            optim_args["lr"] = params["learning_rate"]
+            optim_args["weight_decay"] = params["weight_decay"]
+            optim_args["nesterov"] = not(params["no_nesterov"])
+        else:
+            optim_args["nesterov"] = True
+            optim_args["lr"] = params["cloud_learning_rate"]
+            optim_args["momentum"] = params["cloud_momentum"]
+            optim_args["weight_decay"] = params["cloud_weight_decay"]
+        
         return optim.SGD, optim_args
     elif optim_str.lower() == "novograd":
         optim_args["weight_decay"] = params["weight_decay"]
@@ -49,6 +61,7 @@ def get_scheduler(sched_str, params):
         sched_args["verbose"] = True
         return optim.lr_scheduler.ReduceLROnPlateau, sched_args
     elif sched_str.lower() == "constant":
+        print("Using constant learning rate")
         # use a constant scheduler, i.e. no scheduler
         return DummyScheduler, sched_args
     print("Requested optimizer not supported!")

@@ -63,6 +63,8 @@ model_dict = {
     "vgg13": cifar10.VGG13,  # params: 9416010
     "vgg16": cifar10.VGG16,  # params: 14728266
     "vgg19": cifar10.VGG19,  # params: 20040522
+    # cnn
+    "cnn": cifar10.CNN
 }
 
 def create_model(name, num_classes, device):
@@ -71,7 +73,7 @@ def create_model(name, num_classes, device):
     model = model_cls(num_classes=num_classes)    
     total_params = sum(p.numel() for p in model.parameters())
     layers = len(list(model.modules()))
-    # print(f" total parameters: {total_params}, layers {layers}")
+    print(f" total parameters: {total_params}, layers {layers}")
     
     # always use dataparallel for now
     model = torch.nn.DataParallel(model)  
@@ -85,5 +87,6 @@ def create_model(name, num_classes, device):
 
 
 if __name__ == "__main__":
-    for model in model_dict.keys():
-        create_model(model, 10, "cpu")
+    # for model in model_dict.keys():
+    model = create_model("cnn", 10, "cpu")
+    print(model)

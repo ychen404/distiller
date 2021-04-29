@@ -4,10 +4,12 @@ from pathlib import Path
 # from distillers import *
 from data_loader import get_cifar
 from models.model_factory import create_model
+
 from trainer import BaseTrainer, KDTrainer, MultiTeacher
-from plot import plot_results
+# from plot import plot_results
 import util
 import torch.nn as nn
+import torch
 from sampling import cifar_iid
 import psutil
 import os
@@ -15,7 +17,9 @@ import pdb
 import logging
 import time
 import numpy as np
-from timer import Timer
+from utils.timer import Timer
+from aggregate_method.Fed import FedAvg
+import copy
 
 BATCH_SIZE = 128
 TESTFOLDER = "results"
@@ -32,7 +36,6 @@ fmt_str = '[%(levelname)s] %(filename)s @ line %(lineno)d: %(message)s'
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Test parameters")
     
-    
     # federated arguments
     parser.add_argument("--epochs", default=EPOCHS, type=int,
                         help="number of total epochs to run on edge")
@@ -48,14 +51,32 @@ def parse_arguments():
     # model arguments
     parser.add_argument("--dataset", default="cifar100", type=str,
                         help="dataset. can be either cifar10 or cifar100")
-    parser.add_argument("--edge_distillation", default=0,
-                        type=int, help="enable edge distillation")
-    parser.add_argument("--learning-rate", default=0.1,
+    
+    parser.add_argument("--edge_update", default="edge_distillation", type=str,
+                        help="edge model update method can be copy, edge_distillation, and no_update")
+
+    # edge distillation is one of the edge update methods
+    # parser.add_argument("--edge_distillation", default=0,
+    #                     type=int, help="enable edge distillation")
+    
+    parser.add_argument("--learning_rate", default=0.1,
                         type=float, help="initial learning rate")
+
     parser.add_argument("--momentum", default=0.9,
                         type=float, help="SGD momentum")
     parser.add_argument("--weight-decay", default=5e-4,
                         type=float, help="SGD weight decay (default: 5e-4)")
+
+    parser.add_argument("--cloud_learning_rate", default=0.1,
+                        type=float, help="initial learning rate")
+    parser.add_argument("--cloud_momentum", default=0.9,
+                        type=float, help="SGD momentum")
+    parser.add_argument("--cloud_weight_decay", default=5e-4,
+                        type=float, help="SGD weight decay (default: 5e-4)")
+
+    parser.add_argument("--no_nesterov", action='store_true',
+                        help="disable nesterov on edge")
+
     parser.add_argument("--edge", default="resnet8", type=str,
                         dest="e_name", help="edge model name")
     parser.add_argument("--cloud", default="resnet8", type=str, 
@@ -68,9 +89,15 @@ def parse_arguments():
                     help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--ngpu', default=1, type=int,
                     help='number of GPUs to use for training')
+    
     parser.add_argument("--scheduler", default="multisteplr",
                         dest="scheduler", type=str,
                         help="Which scheduler to use")
+    
+    parser.add_argument("--cloud_scheduler", default="multisteplr",
+                        dest="cloud_scheduler", type=str,
+                        help="Which scheduler to use for cloud")
+
     parser.add_argument("--teacher-checkpoint", default="",
                         dest="t_checkpoint", type=str,
                         help="optional pretrained checkpoint for teacher")
@@ -204,6 +231,17 @@ def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name
 
     return edge_net
 
+def copy_weights(net):
+    weights = net.state_dict()
+    return weights
+
+def load_checkpoint(model, ckpt_path):
+
+    model.load_state_dict(torch.load(ckpt_path))
+
+    return model
+
+
 
 def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
@@ -261,22 +299,15 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             logger.info("==== Multiteacher_kd mode ====")
 
             # Multi edge models perform distillation to the cloud model
-            cloud_acc[mode], _cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
+            cloud_acc[mode], trained_cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
                                                                     edge_nets, params_cloud)                
 
-            if params_edge["edge_distillation"] == 0:
-                logger.info('Disabled edge distillation, do nothing here')
-                # Multi edge models perform distillation to the cloud model
-                # results[mode], _cloud_net, _edge_nets = multi_edge_kd(cloud_net, edge_nets, params_cloud)                
-                # Teacher model continue to next round of local training
-                #################################################
-                # Move the following code outside 
-                # if params_edge["communication_round"] > 1:
-                #     logger.info("continue_training_multi_edge")
-                #     continue_training_multi_edge(_edge_nets, e_name, params_edge)
-                #################################################
-        
-            else: 
+            if params_edge["edge_update"] == "no_update": 
+                # do nothing here
+                logger.info('No edge update, do nothing here')
+
+            elif params_edge["edge_update"] == "edge_distillation": 
+                # use edge distillation here
                 logger.info('Enabled edge distillation')                              
                 # Return the all the edge models after performing edge distillation in case need it
                 # edge_config instead of edge_params is used here becase the test_name field is added to the edge_config only
@@ -285,14 +316,50 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                     logger.info(f"Edge distillation {user + 1}th edge model")
                     # edge_net, _, edge_config = train_edge(current_round, edge_nets[user], params_edge, e_name, 
                     #                                             partition_idx, edge_suffix='_edge_'+ str(user))    
-                    _edge_nets_after_distillation = edge_distillation(current_round, edge_nets[user], _cloud_net, 
+                    _edge_nets_after_distillation = edge_distillation(current_round, edge_nets[user], trained_cloud_net, 
                                                                             edge_config, e_name, partition_idx, edge_suffix='_edge_ds_'+ str(user))
 
+            elif params_edge["edge_update"] == "copy":
+                assert c_name == e_name
+                # directly copy the cloud model
+                # assert the cloud and edge model arch first 
+                for user in idxs_users:
+                    logger.info(f"Copying cloud model to the {user + 1}th edge model")
+                    cloud_weights = trained_cloud_net.state_dict()
+                    cloud_weights_copy = copy.deepcopy(cloud_weights)
+                    edge_nets[user].load_state_dict(cloud_weights_copy)
 
+            else:
+                logger.info("Please provide edge update method")
+                exit()
 
         elif mode == "fedavg":
             # need to merge fedavg to here
-            pass
+            logger.info("==== FedAvg mode ====")
+            w_edge_models = []
+            # create placeholder for all the edge weights
+            all_edge_weights = [None for user in idxs_users]
+            
+            # Perform FedAvg            
+            for user, partition_idx in enumerate (idxs_users):
+                w = edge_nets[user].state_dict()
+                all_edge_weights[user] = copy.deepcopy(w)               
+            averaged_weights = FedAvg(all_edge_weights)
+
+            if params_edge["edge_update"] == "no_update": 
+                # do nothing here
+                logger.info('No edge update, do nothing here')
+
+            elif params_edge["edge_update"] == "copy":
+                assert c_name == e_name
+                # directly copy from the averaged weights produced by FedAvg
+                # assert the cloud and edge model arch first 
+                for user in idxs_users:
+                    logger.info(f"Copying cloud model to the {user + 1}th edge model")
+                    edge_nets[user].load_state_dict(averaged_weights)
+            else:
+                logger.info("Please provide edge update method for FedAVG (copy or no_update")
+                exit()
 
         else:
             print("No kd mode selected")
@@ -341,7 +408,8 @@ def start_evaluation(args):
         "results_dir": results_dir,
         "num_users": args.num_users,
         "nthread": args.nthread,
-        "edge_distillation": args.edge_distillation,
+        # "edge_distillation": args.edge_distillation,
+        "edge_update": args.edge_update,
         "model_type": "edge",
         # "train_loader": train_loader,
         # "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
@@ -368,6 +436,7 @@ def start_evaluation(args):
         "momentum": args.momentum,
         "sched": args.scheduler,
         "optim": args.optimizer,
+        "no_nesterov": args.no_nesterov,
         # fixed knowledge distillation parameters
         # Change lambda_student from 0.5 to 1 to remove the impact from labels
         "lambda": 1,
@@ -394,11 +463,16 @@ def start_evaluation(args):
         "student_name": args.c_name,
         "num_classes": num_classes,
         # hyperparameters
-        "weight_decay": args.weight_decay,
-        "learning_rate": args.learning_rate,
-        "momentum": args.momentum,
+        # "weight_decay": args.weight_decay,
+        # "momentum": args.momentum,
         "sched": args.scheduler,
         "optim": args.optimizer,
+
+        "cloud_learning_rate": args.cloud_learning_rate,
+        "cloud_weight_decay": args.cloud_weight_decay,
+        "cloud_momentum": args.cloud_momentum,
+        "cloud_sched": args.cloud_scheduler,
+
         # fixed knowledge distillation parameters
         # Change lambda_student from 0.5 to 1 to remove the impact from labels
         "lambda": 1,
