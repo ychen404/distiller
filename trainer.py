@@ -222,7 +222,7 @@ class BaseTrainer(Trainer):
 
 class KDTrainer(Trainer):
     # def __init__(self, s_net, t_net, config):
-    #     super(KDTrainer, self).__init__(s_net, config)
+    # super(KDTrainer, self).__init__(s_net, config)
     # Inherite the idxs from Trainer
     def __init__(self, s_net, t_net, config, idxs=None):
         super(KDTrainer, self).__init__(s_net, config, idxs)

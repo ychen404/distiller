@@ -18,7 +18,7 @@ import logging
 import time
 import numpy as np
 from utils.timer import Timer
-from aggregate_method.Fed import FedAvg
+from aggregate_method.Fed import FedAvg, cosine_annealing
 import copy
 
 BATCH_SIZE = 128
@@ -130,11 +130,11 @@ def setup_edge(edge_name, edge_params):
     return t_net
 
 @Timer(text='train_edge in {:.4f} seconds')
-def train_edge(current_round, t_net, edge_params, edge_name, partition_idx, edge_suffix):
+def train_edge(current_round, edge_net, edge_params, edge_name, partition_idx, edge_suffix):
     
     # logger.info("Training edge model")
     # defrost because from the seoncd round the edge models are frozen during distillation
-    t_net = defrost_net(t_net)
+    edge_net = defrost_net(edge_net)
     edge_config = edge_params.copy()
     edge_config["test_name"] = edge_name + edge_suffix
     dict_users = edge_params['dict_users']
@@ -142,11 +142,11 @@ def train_edge(current_round, t_net, edge_params, edge_name, partition_idx, edge
 
     # Trainer wraps the training related functions together
     logger.debug(f"The partition idx is {partition_idx}")
-    edge_trainer = BaseTrainer(t_net, config=edge_config, idxs=dict_users[partition_idx])
+    edge_trainer = BaseTrainer(edge_net, config=edge_config, idxs=dict_users[partition_idx])
     edge_trainer.train(current_round)
     edge_ckpt = edge_trainer.model_file
 
-    return t_net, edge_ckpt, edge_config
+    return edge_net, edge_ckpt, edge_config
 
 @Timer(text='setup_cloud in {:.4f} seconds')
 def setup_cloud(s_name, params):
@@ -182,22 +182,6 @@ def test_kd(s_net, t_net, params):
     
     return best_acc
 
-# def single_edge_kd(current_round, edge_net, cloud_net, edge_params, edge_name, partition_idx, edge_suffix):
-
-#     logger.info("---------- one-to-one distillation -------")
-#     cloud_net = freeze_net(cloud_net)
-#     kd_config = edge_params.copy()
-    
-#     # Save the results after distillation separately for a better comparison
-#     kd_config["test_name"] = edge_name + edge_suffix
-#     dict_users = kd_config['dict_users']
-
-#     logger.debug(f"The partition idx is {partition_idx}")
-
-#     kd_trainer = KDTrainer(edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
-#     edge_acc = kd_trainer.train(current_round)
-#     return edge_acc, edge_net, cloud_net
-
 @Timer(text='multi_edge_kd in {:.4f} seconds')
 def multi_edge_kd(current_round, cloud_net, edge_nets, params):
     # Use CIFAR-100 unlabeled data for KD with multiple edge models
@@ -211,7 +195,8 @@ def multi_edge_kd(current_round, cloud_net, edge_nets, params):
     kd_config = params.copy()
     kd_trainer = MultiTeacher(cloud_net, t_nets=frozen_edge_nets, config=kd_config)
     cloud_acc = kd_trainer.train(current_round)
-    return cloud_acc, cloud_net, edge_nets
+    cloud_ckpt = kd_trainer.model_file
+    return cloud_acc, cloud_ckpt, cloud_net, edge_nets
 
 @Timer(text='edge_distillation in {:.4f} seconds')
 def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name, partition_idx, edge_suffix):
@@ -232,16 +217,22 @@ def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name
     return edge_net
 
 def copy_weights(net):
+
     weights = net.state_dict()
     return weights
 
 def load_checkpoint(model, ckpt_path):
 
     model.load_state_dict(torch.load(ckpt_path))
-
     return model
 
-
+def print_model_parameters(model):
+    for name, param in model.named_parameters():
+        logger.debug(f'name: {name}')
+        logger.debug(type(param))
+        logger.debug(f'param.shape: {param.shape} ')
+        logger.debug(f'param.requires_grad: {param.requires_grad}')
+        logger.debug(f'=====')
 
 def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
@@ -255,9 +246,9 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     logger.debug(f"params['num_users'] = {params_edge['num_users']}")
     m = max(int(args.frac * args.num_users), 1)
     idxs_users = np.random.choice(range(args.num_users), m, replace=False)
-
+    logger.debug(f"idx_users: {idxs_users}")
     # pdb.set_trace()
-
+    
     for user, partition_idx in enumerate (idxs_users):
         logger.info(f"Edge model: {user + 1}, partition_idx: {partition_idx}")
         edge_net = setup_edge(e_name, params_edge)
@@ -299,7 +290,7 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             logger.info("==== Multiteacher_kd mode ====")
 
             # Multi edge models perform distillation to the cloud model
-            cloud_acc[mode], trained_cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
+            cloud_acc[mode], cloud_ckpt, trained_cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
                                                                     edge_nets, params_cloud)                
 
             if params_edge["edge_update"] == "no_update": 
@@ -323,10 +314,18 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 assert c_name == e_name
                 # directly copy the cloud model
                 # assert the cloud and edge model arch first 
-                for user in idxs_users:
-                    logger.info(f"Copying cloud model to the {user + 1}th edge model")
-                    cloud_weights = trained_cloud_net.state_dict()
-                    cloud_weights_copy = copy.deepcopy(cloud_weights)
+                
+                # print_model_parameters(trained_cloud_net)
+                # try loading the cloud model instead
+                # pdb.set_trace()
+                logger.debug(f"Loading cloud model: {cloud_ckpt}")
+                cloud_loaded = util.load_checkpoint(cloud_net, cloud_ckpt)
+                cloud_weights = cloud_loaded.state_dict()
+                cloud_weights_copy = copy.deepcopy(cloud_weights)
+
+                logger.debug(f"idxs_users: {idxs_users}")
+                for user, partition_idx in enumerate (idxs_users):
+                    logger.info(f"Copying cloud model to the {user + 1}th edge model")                   
                     edge_nets[user].load_state_dict(cloud_weights_copy)
 
             else:
@@ -354,7 +353,9 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 assert c_name == e_name
                 # directly copy from the averaged weights produced by FedAvg
                 # assert the cloud and edge model arch first 
-                for user in idxs_users:
+                # for user in idxs_users:
+                for user, partition_idx in enumerate (idxs_users):
+
                     logger.info(f"Copying cloud model to the {user + 1}th edge model")
                     edge_nets[user].load_state_dict(averaged_weights)
             else:
@@ -389,8 +390,23 @@ def start_evaluation(args):
     # for benchmarking, decided whether we want to use unique test folders
     if USE_ID:
         # test_id = util.generate_id()
-        test_id = args.workspace + '_' + timestr
-        # test_id = args.workspace
+        # test_id = args.workspace + '_' + timestr
+
+        # test_id = f"{args.workspace}_n_users_{args.num_users}_eps_{args.epochs}_cloud_eps_{args.cloud_epochs}_comm_{args.communication_round}_e_{args.e_name}_c_{args.c_name}_frac_{args.frac}_mode_{args.modes[0]}_{args.edge_update}_lrsched_{args.scheduler}_bs_{args.batch_size}_cloud_lr_{args.cloud_learning_rate}" + f"_{timestr}"  
+
+        test_id = (f"{args.workspace}_n_users_{args.num_users}"
+                    f"_eps_{args.epochs}"
+                    f"_cloud_eps_{args.cloud_epochs}"
+                    f"_comm_{args.communication_round}"
+                    f"_e_{args.e_name}_c_{args.c_name}"
+                    f"_frac_{args.frac}"
+                    f"_mode_{args.modes[0]}"
+                    f"_{args.edge_update}"
+                    f"_lrsched_{args.scheduler}"
+                    f"_bs_{args.batch_size}"
+                    f"_cloud_lr_{args.cloud_learning_rate}"
+                    f"_{timestr}"  
+                )
 
     else:
         test_id = ""

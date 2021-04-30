@@ -117,9 +117,38 @@
 #  --log debug --gpu_id 2
 
 # debug model copy of FedDF
-   python3 my_main.py --epochs 5 --cloud_epochs 1 --communication_round 2 --edge resnet8 --batch-size 128 \
+#    python3 my_main.py --epochs 10 --cloud_epochs 10 --communication_round 100 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+#  --num_users 4 --edge_update copy \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+#  --workspace lr_1e-3_debug_update_comm100_ep_10 \
+#  --log debug --gpu_id 3
+
+#    python3 my_main.py --epochs 10 --cloud_epochs 10 --communication_round 100 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+#  --num_users 8 --edge_update copy \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov \
+#  --workspace test_copy_n_users_8_eps_10_cloud_eps_1_comm_100_e_r8_c_r8_frac_1_multiteacher_kd_constantlr_bs_128 \
+#  --log debug --gpu_id 0
+
+# ongoing 4/29
+#    python3 my_main.py --epochs 40 --cloud_epochs 40 --communication_round 100 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+#  --num_users 4 --edge_update copy \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+#  --workspace lr_1e-3_debug_update_comm100_ep_40 \
+#  --log debug --gpu_id 2
+
+#    python3 my_main.py --epochs 40 --cloud_epochs 40 --communication_round 100 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+#  --num_users 4 --edge_update copy \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov \
+#  --workspace lr_0.1_debug_update_comm100_ep_40 \
+#  --log debug --gpu_id 3
+
+   python3 my_main.py --epochs 2 --cloud_epochs 2 --communication_round 2 --edge resnet8 --batch-size 128 \
  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
- --num_users 8 --edge_update copy \
- --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov \
- --workspace debug_update \
- --log debug --gpu_id 0
+ --num_users 4 --edge_update copy \
+ --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+ --workspace test_ws \
+ --log debug --gpu_id 3

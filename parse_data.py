@@ -126,7 +126,7 @@ def parse_cloud(path, csv_name):
     
 if __name__ == "__main__":
     path = sys.argv[1]
-    parse_edge(path, 'fedavg_ep5_noupdate')
+    parse_edge(path, 'fedavg_20_client_noupdate')
     # parse_cloud(path, 'edge_distillation_cloud')
     # output_path = str(new_path)
     # print(output_path)

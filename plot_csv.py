@@ -27,15 +27,18 @@ from numpy import genfromtxt
 # labels['fedavg_edge_avg.csv'] = 'fedavg_edge'
 # labels['fedavg_noupdate_avg.csv'] = 'fedavg_noupdate_edge'
 
-
 filenames = [
               'fedavg_ep5_avg.csv',
-              'fedavg_ep5_noupdate_avg.csv'              
+              'fedavg_ep5_noupdate_avg.csv',
+              'fedavg_20_client_avg.csv',
+              'fedavg_20_client_noupdate_avg.csv'
               ]
 labels = {}
 
-labels['fedavg_ep5_avg.csv'] = 'fedavg_edge_ep5_comm250'
-labels['fedavg_ep5_noupdate_avg.csv'] = 'fedavg_noupdate_ep5_comm250'
+labels['fedavg_ep5_avg.csv'] = 'fedavg_8_client'
+labels['fedavg_ep5_noupdate_avg.csv'] = 'fedavg_8_client_noupdate'
+labels['fedavg_20_client_avg.csv'] = 'fedavg_20_client'
+labels['fedavg_20_client_noupdate_avg.csv'] = 'fedavg_20_client_noupdate'
 
 # plot_title = filenames[0].split('.')[0]
 
@@ -62,14 +65,14 @@ for i, filename in enumerate(filenames):
 # plt.legend(handles=[line])
 # handles, labels = ax.get_legend_handles_lables()
 # ax.legend(handles, labels)
-plot_title = 'Accuracy comparison'
+plot_title = 'Accuracy with different clients'
 
 ax.set(xlabel='Epochs', ylabel='Accuracy',
        title=str(plot_title))
 ax.grid()
 print(os.curdir)
 plt.tight_layout()
-fig.savefig(str(plot_title) + ".png")
+fig.savefig(plot_title + ".png")
 # plt.show()
 
 
