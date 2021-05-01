@@ -61,7 +61,6 @@ def parse_arguments():
     
     parser.add_argument("--learning_rate", default=0.1,
                         type=float, help="initial learning rate")
-
     parser.add_argument("--momentum", default=0.9,
                         type=float, help="SGD momentum")
     parser.add_argument("--weight-decay", default=5e-4,
@@ -90,11 +89,11 @@ def parse_arguments():
     parser.add_argument('--ngpu', default=1, type=int,
                     help='number of GPUs to use for training')
     
-    parser.add_argument("--scheduler", default="multisteplr",
+    parser.add_argument("--scheduler", default="constant",
                         dest="scheduler", type=str,
                         help="Which scheduler to use")
     
-    parser.add_argument("--cloud_scheduler", default="multisteplr",
+    parser.add_argument("--cloud_scheduler", default="constant",
                         dest="cloud_scheduler", type=str,
                         help="Which scheduler to use for cloud")
 
@@ -193,8 +192,8 @@ def multi_edge_kd(current_round, cloud_net, edge_nets, params):
         frozen_edge_nets.append(freeze_net(e_net))
     
     kd_config = params.copy()
-    cloud_lr = kd_config["cloud_learning_rate"]
-    logger.debug(f"Cloud lr: {cloud_lr}")
+    # cloud_lr = kd_config["cloud_learning_rate"]
+    # logger.debug(f"Cloud lr: {cloud_lr}")
     kd_trainer = MultiTeacher(cloud_net, t_nets=frozen_edge_nets, config=kd_config)
     cloud_acc = kd_trainer.train(current_round)
     cloud_ckpt = kd_trainer.model_file
@@ -267,7 +266,7 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
     # Setup the cloud model 
     cloud_net = setup_cloud(c_name, params_cloud)
-    
+   
     # Setup directories
     params_cloud["test_name"] = c_name + '_cloud'
     # params_cloud["results_dir"] = params_cloud["results_dir"].joinpath('cloud_model')
@@ -434,6 +433,7 @@ def start_evaluation(args):
                     f"_mode_{args.modes[0]}"
                     f"_{args.edge_update}"
                     f"_lrsched_{args.scheduler}"
+                    f"_cloud_lrsched_{args.cloud_scheduler}"
                     f"_bs_{args.batch_size}"
                     f"_cloud_lr_{args.cloud_learning_rate}"
                     f"_{timestr}"  

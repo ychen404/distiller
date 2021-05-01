@@ -45,7 +45,15 @@ class Trainer():
         self.name = config["test_name"]
         # Retrieve preconfigured optimizers and schedulers for all runs
         optim = config["optim"]
-        sched = config["sched"]
+        
+        # The sampler works with the dataset object instead of the dataloader object
+        self.model_type = config["model_type"]
+        
+        if self.model_type == "edge":
+            sched = config["sched"]
+        else:
+            sched = config["cloud_sched"]
+
         self.optim_cls, self.optim_args = get_optimizer(optim, config)
         self.sched_cls, self.sched_args = get_scheduler(sched, config)
         self.optimizer = self.optim_cls(net.parameters(), **self.optim_args)
@@ -57,8 +65,7 @@ class Trainer():
 
         self.test_loader = config["test_loader"]
        
-        # The sampler works with the dataset object instead of the dataloader object
-        self.model_type = config["model_type"]
+        
         print(f"Model type: {self.model_type}")
         # There is no train_dataset for cloud model; it loads the cifar100 train loader directly
         if self.model_type == "edge":
@@ -68,7 +75,6 @@ class Trainer():
             self.num_users = 1
         
         self.indexs = idxs
-        
          
         # self.batch_size = self.train_loader.batch_size
         self.batch_size = config["batch_size"]
@@ -125,7 +131,6 @@ class Trainer():
         total_correct = 0.0
         total_loss = 0.0
                
-
         if self.model_type == "edge":
             len_train_set = len(self.train_dataset) / self.num_users
         
@@ -191,11 +196,15 @@ class Trainer():
             # update the scheduler
             if self.scheduler:
                 self.scheduler.step()
+                if self.model_type == "cloud":
+                    cloud_lr = self.scheduler.get_lr()
+                    self.lr_file.write(f"{cloud_lr}\n")
+                    print(f"Cloud lr: {cloud_lr}")
 
             self.acc_file.write(f"{train_acc},{val_acc}\n")
             
-            if self.model_type == "cloud":
-                self.lr_file.write(f"{cloud_lr}\n")
+            # if self.model_type == "cloud":
+            #     self.lr_file.write(f"{cloud_lr}\n")
 
             # print(f"acc_file, train_acc, val_acc: {self.acc_file}, {train_acc}, {val_acc}")
             # exit()
