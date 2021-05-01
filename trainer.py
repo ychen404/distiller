@@ -86,7 +86,6 @@ class Trainer():
             # cloud model uses cifar100 train loader from the config file
             self.train_loader = config["train_loader"]
 
-
         # self.train_loader = DataLoader(DatasetSplit(self.train_dataset, self.indexs), batch_size=self.batch_size, 
         #         shuffle=True, num_workers=self.config["nthread"], pin_memory=torch.cuda.is_available())
 
@@ -95,9 +94,18 @@ class Trainer():
         folder = config["results_dir"]
         self.model_file = folder.joinpath(f"{self.name}_ckpt.pth.tar")
         acc_file_name = folder.joinpath(f"{self.name}_acc.csv")
+        lr_file_name = folder.joinpath(f"{self.name}_lr.csv")
+        
         self.acc_file = acc_file_name.open("w+")
+
+
         self.acc_file.write("Accuracy numbers are recorded every epoch\n")
         self.acc_file.write("Training Acc,Test Acc\n")
+
+        if self.model_type == "cloud":
+            self.lr_file = lr_file_name.open("w+")
+            self.lr_file.write("Cloud learning rate every epoch\n")
+            self.lr_file.write("Learning rate\n")
 
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer
@@ -151,8 +159,16 @@ class Trainer():
         total_acc = float(total_correct / len_train_set)
         return total_acc
 
+    def get_accuracy(self, current_round):
+        val_acc = self.validate(current_round)
+        self.acc_file.write(f"None,{val_acc}\n")
+
+
     def train(self, current_round):
         epochs = self.config["epochs"]
+        
+        if self.model_type == "cloud":
+            cloud_lr = self.config["cloud_learning_rate"]
 
         t_bar = init_progress_bar(self.train_loader)
         for epoch in range(epochs):
@@ -177,6 +193,10 @@ class Trainer():
                 self.scheduler.step()
 
             self.acc_file.write(f"{train_acc},{val_acc}\n")
+            
+            if self.model_type == "cloud":
+                self.lr_file.write(f"{cloud_lr}\n")
+
             # print(f"acc_file, train_acc, val_acc: {self.acc_file}, {train_acc}, {val_acc}")
             # exit()
         tqdm.clear(t_bar)

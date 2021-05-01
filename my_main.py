@@ -193,10 +193,21 @@ def multi_edge_kd(current_round, cloud_net, edge_nets, params):
         frozen_edge_nets.append(freeze_net(e_net))
     
     kd_config = params.copy()
+    cloud_lr = kd_config["cloud_learning_rate"]
+    logger.debug(f"Cloud lr: {cloud_lr}")
     kd_trainer = MultiTeacher(cloud_net, t_nets=frozen_edge_nets, config=kd_config)
     cloud_acc = kd_trainer.train(current_round)
     cloud_ckpt = kd_trainer.model_file
     return cloud_acc, cloud_ckpt, cloud_net, edge_nets
+
+def dummy_trainer(current_round, cloud_net, params):
+    # Calculates the test accuracy of the aggregated model
+    logger.info("---------- Testing aggregated model -------")
+    
+    kd_config = params.copy()
+    cloud_trainer = BaseTrainer(cloud_net, config=kd_config, idxs=None)
+    cloud_trainer.get_accuracy(current_round)
+
 
 @Timer(text='edge_distillation in {:.4f} seconds')
 def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name, partition_idx, edge_suffix):
@@ -285,9 +296,20 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             edge_net, _, edge_config = train_edge(current_round, edge_nets[user], params_edge, e_name, 
                                                             partition_idx, edge_suffix='_edge_'+ str(user))
         
+
+        # total_round = params_cloud['communication_round']
+        # n_epochs = total_round * params_cloud['epochs']
+        # n_cycles = 5
+        # lrate_max = args.cloud_learning_rate
+        # series = [cosine_annealing(i, n_epochs, n_cycles, lrate_max) for i in range(n_epochs)]
+
         # We select how to aggregate the edge models
         if mode == "multiteacher_kd":
             logger.info("==== Multiteacher_kd mode ====")
+
+            # Update learning rate 
+            # def cosine_annealing(epoch, n_epochs, n_cycles, lrate_max):
+            # cloud_learning_rate = cosine_annealing()
 
             # Multi edge models perform distillation to the cloud model
             cloud_acc[mode], cloud_ckpt, trained_cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
@@ -348,8 +370,17 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             if params_edge["edge_update"] == "no_update": 
                 # do nothing here
                 logger.info('No edge update, do nothing here')
+                # Test the aggregated model
+                cloud_net.load_state_dict(averaged_weights)
+                dummy_trainer(current_round, cloud_net, params_cloud)
 
             elif params_edge["edge_update"] == "copy":
+                
+                # Test the aggregated model
+                cloud_net.load_state_dict(averaged_weights)
+                # pdb.set_trace()
+                dummy_trainer(current_round, cloud_net, params_cloud)
+
                 assert c_name == e_name
                 # directly copy from the averaged weights produced by FedAvg
                 # assert the cloud and edge model arch first 
