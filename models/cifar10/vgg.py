@@ -4,6 +4,7 @@ import torch.nn as nn
 
 
 cfg = {
+    'VGG9': [64, 'M', 128, 'M', 256, 'M', 512, 'M', 512, 512, 'M'], # added VGG9 based on the pattern below. 5/4 Yitao
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
@@ -37,6 +38,9 @@ class VGG(nn.Module):
         layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
         return nn.Sequential(*layers)
 
+
+def VGG9(**kwargs):
+    return VGG('VGG9')
 
 def VGG11(**kwargs):
     return VGG('VGG11')

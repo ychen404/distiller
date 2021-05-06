@@ -45,7 +45,7 @@ def parse_arguments():
                         type=str, nargs='+',
                         help="What type of distillation to use")
     parser.add_argument("--results-dir", default=TESTFOLDER,
-                        dest="results_dir", type=str,
+         split dest="results_dir", type=str,
                         help="Where all results are collected")
     args = parser.parse_args()
     return args

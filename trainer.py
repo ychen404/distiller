@@ -6,6 +6,8 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
 from optimizer import get_optimizer, get_scheduler
 import pdb
+from aggregate_method.early_stopping import EarlyStopping
+
 
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
@@ -64,8 +66,23 @@ class Trainer():
         # remove the full data loader
 
         self.test_loader = config["test_loader"]
-       
         
+
+        # initialize the early_stopping object
+
+        if self.model_type == "cloud":
+        
+            # to track the training loss as the model trains
+            train_losses = []
+            # to track the validation loss as the model trains
+            valid_losses = []
+            # to track the average training loss per epoch as the model trains
+            avg_train_losses = []
+            # to track the average validation loss per epoch as the model trains
+            avg_valid_losses = [] 
+        
+            early_stopping = EarlyStopping(patience=20, verbose=True)
+
         print(f"Model type: {self.model_type}")
         # There is no train_dataset for cloud model; it loads the cifar100 train loader directly
         if self.model_type == "edge":
@@ -197,7 +214,7 @@ class Trainer():
             if self.scheduler:
                 self.scheduler.step()
                 if self.model_type == "cloud":
-                    cloud_lr = self.scheduler.get_lr()
+                    cloud_lr = self.scheduler.get_last_lr()
                     self.lr_file.write(f"{cloud_lr}\n")
                     print(f"Cloud lr: {cloud_lr}")
 
@@ -283,6 +300,44 @@ class KDTrainer(Trainer):
         out_s = self.s_net(data)
         out_t = self.t_net(data)
         loss = self.kd_loss(out_s, out_t, target)
+        loss.backward()
+        self.optimizer.step()
+        return out_s, loss
+
+class KDTrainerNoLabel(Trainer):
+    # def __init__(self, s_net, t_net, config):
+    # super(KDTrainer, self).__init__(s_net, config)
+    # Inherite the idxs from Trainer
+    def __init__(self, s_net, t_net, config, idxs=None):
+        super(KDTrainerNoLabel, self).__init__(s_net, config, idxs)
+        # the student net is the base net
+        self.s_net = self.net
+        self.t_net = t_net
+        self.kd_fun = nn.KLDivLoss(size_average=False)
+
+    def kd_loss(self, out_s, out_t):
+        lambda_ = self.config["lambda"]
+        T = self.config["T"]
+        # Standard Learning Loss ( Classification Loss)
+        # Remove the Standard learning loss for unlabel case
+        # loss = self.loss_fun(out_s, target)
+
+        # Knowledge Distillation Loss
+        # batch_size = target.shape[0]
+        batch_size = out_s.shape[0]
+        s_max = F.log_softmax(out_s / T, dim=1)
+        t_max = F.softmax(out_t / T, dim=1)
+        # print(f"s_max: {s_max.shape} t_max: {t_max.shape}")
+
+        loss_kd = self.kd_fun(s_max, t_max) / batch_size
+        # loss = (1 - lambda_) * loss + lambda_ * T * T * loss_kd
+        loss = loss_kd
+        return loss
+
+    def calculate_loss(self, data, target):
+        out_s = self.s_net(data)
+        out_t = self.t_net(data)
+        loss = self.kd_loss(out_s, out_t)
         loss.backward()
         self.optimizer.step()
         return out_s, loss

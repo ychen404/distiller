@@ -1,4 +1,3 @@
-
 import math
 import torch
 from torch import optim
@@ -25,14 +24,17 @@ def get_optimizer(optim_str, params):
             optim_args["weight_decay"] = params["cloud_weight_decay"]
         
         return optim.SGD, optim_args
+
     elif optim_str.lower() == "novograd":
         optim_args["weight_decay"] = params["weight_decay"]
         return NovoGrad, optim_args
+
     elif optim_str.lower() == "adabound":
         optim_args["weight_decay"] = params["weight_decay"]
         optim_args["amsbound"] = True
         optim_args["final_lr"] = 0.1
         return AdaBound, optim_args
+
     print("Requested optimizer not supported!")
     exit(1)
 
@@ -67,6 +69,8 @@ def get_scheduler(sched_str, params):
     elif sched_str.lower() == 'cosineannealinglr':
         print("Using cosine annealing lr")
         sched_args["T_max"] = len(params["train_loader"]) // params["batch_size"]
+        tmax = sched_args["T_max"]
+        print(f"T_max: {tmax}")
         sched_args["verbose"] = True
 
         return optim.lr_scheduler.CosineAnnealingLR, sched_args

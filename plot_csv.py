@@ -28,17 +28,22 @@ from numpy import genfromtxt
 # labels['fedavg_noupdate_avg.csv'] = 'fedavg_noupdate_edge'
 
 filenames = [
-              'fedavg_ep5_avg.csv',
-              'fedavg_ep5_noupdate_avg.csv',
-              'fedavg_20_client_avg.csv',
-              'fedavg_20_client_noupdate_avg.csv'
+              # 'fedavg_ep5_avg.csv',
+              # 'fedavg_ep5_noupdate_avg.csv',
+              # 'fedavg_20_client_avg.csv',
+              # 'fedavg_20_client_noupdate_avg.csv',
+              'fedavg_cloud_8_client_noupdate.csv',
+              'fedavg_cloud_8_client.csv'
               ]
 labels = {}
 
-labels['fedavg_ep5_avg.csv'] = 'fedavg_8_client'
-labels['fedavg_ep5_noupdate_avg.csv'] = 'fedavg_8_client_noupdate'
-labels['fedavg_20_client_avg.csv'] = 'fedavg_20_client'
-labels['fedavg_20_client_noupdate_avg.csv'] = 'fedavg_20_client_noupdate'
+
+# labels['fedavg_ep5_avg.csv'] = 'fedavg_8_client'
+# labels['fedavg_ep5_noupdate_avg.csv'] = 'fedavg_8_client_noupdate'
+# labels['fedavg_20_client_avg.csv'] = 'fedavg_20_client'
+# labels['fedavg_20_client_noupdate_avg.csv'] = 'fedavg_20_client_noupdate'
+labels['fedavg_cloud_8_client_noupdate.csv'] = 'fedavg_cloud_8_client_noupdate'
+labels['fedavg_cloud_8_client.csv'] = 'fedavg_cloud_8_client'
 
 # plot_title = filenames[0].split('.')[0]
 
@@ -52,7 +57,10 @@ for i, filename in enumerate(filenames):
        data[i] = data[i][:-1]
 
 # t = np.arange(1, 101, 1)
-t = np.arange(1, 1251, 1)
+# t = np.arange(1, 1251, 1)
+
+t = np.arange(1, len(data[0])+1, 1)
+
 
 
 fig, ax = plt.subplots()
@@ -65,14 +73,12 @@ for i, filename in enumerate(filenames):
 # plt.legend(handles=[line])
 # handles, labels = ax.get_legend_handles_lables()
 # ax.legend(handles, labels)
-plot_title = 'Accuracy with different clients'
-
-ax.set(xlabel='Epochs', ylabel='Accuracy',
+plot_title = 'FedAvg Cloud Accuracy'
+Plot_outputname = 'Accuracy_0501'
+ax.set(xlabel='Rounds', ylabel='Accuracy',
        title=str(plot_title))
 ax.grid()
 print(os.curdir)
 plt.tight_layout()
-fig.savefig(plot_title + ".png")
+fig.savefig(Plot_outputname + ".png")
 # plt.show()
-
-

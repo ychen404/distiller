@@ -59,6 +59,7 @@ model_dict = {
     "wrn50_2": vision.wide_resnet50_2,  # params: 66854730
     "wrn101_2": vision.wide_resnet101_2,  # params: 124858186
     # vgg lol
+    "vgg9": cifar10.VGG9,   # params: 6279690     
     "vgg11": cifar10.VGG11,  # params: 9231114
     "vgg13": cifar10.VGG13,  # params: 9416010
     "vgg16": cifar10.VGG16,  # params: 14728266

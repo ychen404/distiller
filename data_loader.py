@@ -5,6 +5,8 @@ import torchvision.transforms as transforms
 import numpy as np
 from torch.utils.data import Dataset
 from utils.timer import Timer
+from torch.utils.data.sampler import SubsetRandomSampler
+
 
 NUM_WORKERS = 4
 
@@ -63,7 +65,7 @@ def cifar_iid(dataset, num_users):
     return dict_users
 
 @Timer(text='get_cifar in {:.4f} seconds')
-def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
+def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128, split=0.1,
               use_cifar_10_1=False):
 
     if num_classes == 10:
@@ -84,40 +86,46 @@ def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128,
         normalize,
     ])
 
-    trainset = dataset(root=dataset_dir, train=True,
-                       download=True, transform=train_transform)
-
-    # # Get the dict_users
-    # dict_users = cifar_iid(trainset, num_users)
-
     test_transform = transforms.Compose([
-        transforms.ToTensor(),
-        normalize,
+    transforms.ToTensor(),
+    normalize,
     ])
 
-    # Use the normal cifar 10 testset or a new one to test true generalization
-    # skip this for now
-    # if use_cifar_10_1 and num_classes == 10:
-    #     imagedata, labels = load_cifar_10_1()
-    #     testset = TensorImgSet((imagedata, labels), transform=test_transform)
-    # else:
-    #     testset = dataset(root=dataset_dir, train=False,
-    #                       download=True,
-    #                       transform=test_transform)
 
-    testset = dataset(root=dataset_dir, train=False,
+    train_data = dataset(root=dataset_dir, train=True,
+                       download=True, transform=train_transform)
+
+    test_data = dataset(root=dataset_dir, train=False,
                           download=True,
                           transform=test_transform)
 
-    train_loader = torch.utils.data.DataLoader(trainset,
+
+    # obtain training indices that will be used for validation
+    num_train = len(train_data)
+    indices = list(range(num_train))
+    np.random.shuffle(indices)
+    split = int(np.floor(split * num_train))
+    train_idx, valid_idx = indices[split:], indices[:split]
+
+    # define samplers for obtaining training and validation batches
+    train_sampler = SubsetRandomSampler(train_idx)
+    valid_sampler = SubsetRandomSampler(valid_idx)
+
+    train_loader = torch.utils.data.DataLoader(train_data,
                                                batch_size=batch_size,
                                                num_workers=NUM_WORKERS,
-                                               pin_memory=True, shuffle=True)
+                                               sampler=train_sampler,
+                                               pin_memory=True, shuffle=False)
 
+    valid_loader = torch.utils.data.DataLoader(train_data,
+                                            batch_size=batch_size,
+                                            num_workers=NUM_WORKERS,
+                                            sampler=valid_sampler,
+                                            pin_memory=True, shuffle=False)
 
-    test_loader = torch.utils.data.DataLoader(testset,
+    test_loader = torch.utils.data.DataLoader(test_data,
                                               batch_size=batch_size,
                                               num_workers=NUM_WORKERS,
                                               pin_memory=True, shuffle=False)
 
-    return train_loader, test_loader, trainset, testset
+    return train_loader, test_loader, valid_loader, train_data, test_data

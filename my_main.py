@@ -5,7 +5,7 @@ from pathlib import Path
 from data_loader import get_cifar
 from models.model_factory import create_model
 
-from trainer import BaseTrainer, KDTrainer, MultiTeacher
+from trainer import BaseTrainer, KDTrainer, MultiTeacher, KDTrainerNoLabel
 # from plot import plot_results
 import util
 import torch.nn as nn
@@ -55,12 +55,14 @@ def parse_arguments():
     parser.add_argument("--edge_update", default="edge_distillation", type=str,
                         help="edge model update method can be copy, edge_distillation, and no_update")
 
+    parser.add_argument("--ed_nolabel", action='store_true',
+                        help="remove label in edge distillation")
+
     # edge distillation is one of the edge update methods
     # parser.add_argument("--edge_distillation", default=0,
     #                     type=int, help="enable edge distillation")
     
-    parser.add_argument("--learning_rate", default=0.1,
-                        type=float, help="initial learning rate")
+    parser.add_argument("--learning_rate", default=0.1, type=float, help="initial learning rate")
     parser.add_argument("--momentum", default=0.9,
                         type=float, help="SGD momentum")
     parser.add_argument("--weight-decay", default=5e-4,
@@ -88,15 +90,12 @@ def parse_arguments():
                     help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--ngpu', default=1, type=int,
                     help='number of GPUs to use for training')
-    
     parser.add_argument("--scheduler", default="constant",
                         dest="scheduler", type=str,
                         help="Which scheduler to use")
-    
     parser.add_argument("--cloud_scheduler", default="constant",
                         dest="cloud_scheduler", type=str,
                         help="Which scheduler to use for cloud")
-
     parser.add_argument("--teacher-checkpoint", default="",
                         dest="t_checkpoint", type=str,
                         help="optional pretrained checkpoint for teacher")
@@ -221,7 +220,12 @@ def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name
     dict_users = kd_config['dict_users']
     logger.debug(f"The partition idx is {partition_idx}")
 
-    kd_trainer = KDTrainer(s_net=edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
+    if params_edge["ed_nolabel"]:
+        logger.debug("Edge distillation without labels")
+        kd_trainer = KDTrainerNoLabel(s_net=edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
+    else:
+        kd_trainer = KDTrainer(s_net=edge_net, t_net=cloud_net, config=kd_config, idxs=dict_users[partition_idx])
+
     edge_acc = kd_trainer.train(current_round)
 
     return edge_net
@@ -295,12 +299,6 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             edge_net, _, edge_config = train_edge(current_round, edge_nets[user], params_edge, e_name, 
                                                             partition_idx, edge_suffix='_edge_'+ str(user))
         
-
-        # total_round = params_cloud['communication_round']
-        # n_epochs = total_round * params_cloud['epochs']
-        # n_cycles = 5
-        # lrate_max = args.cloud_learning_rate
-        # series = [cosine_annealing(i, n_epochs, n_cycles, lrate_max) for i in range(n_epochs)]
 
         # We select how to aggregate the edge models
         if mode == "multiteacher_kd":
@@ -409,13 +407,15 @@ def start_evaluation(args):
     num_classes = 100 if args.dataset == "cifar100" else 10
     num_classes_distillation = 100
     
-    train_loader, test_loader, train_dataset, test_dataset = get_cifar(num_classes,
-                                          batch_size=args.batch_size)
+    # No validation split for edge workers
+    train_loader, test_loader, _, train_dataset, test_dataset = get_cifar(num_classes,
+                                          batch_size=args.batch_size, split=0)
+
     dict_users = cifar_iid(train_dataset, args.num_users)
 
     # Load distillation data
-    train_loader_cifar100, test_loader_cifar100, train_dataset_cifar100, test_dataset_cifar100 = get_cifar(num_classes_distillation,
-                                          batch_size=args.batch_size)
+    train_loader_cifar100, test_loader_cifar100, valid_loader_cifar100, train_dataset_cifar100, test_dataset_cifar100 = get_cifar(num_classes_distillation,
+                                          batch_size=args.batch_size, split=0.2)
 
     # for benchmarking, decided whether we want to use unique test folders
     if USE_ID:
@@ -457,15 +457,14 @@ def start_evaluation(args):
         "nthread": args.nthread,
         # "edge_distillation": args.edge_distillation,
         "edge_update": args.edge_update,
+        "ed_nolabel": args.ed_nolabel,
         "model_type": "edge",
         # "train_loader": train_loader,
         # "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
         
         # No need of train_loader, use dataset to create train loader for each edge model
         # "train_loader": train_loader, # used when training teacher from scratch
-
         "test_loader": test_loader,
-
         # dataset objects are used to support indexing
         # the dict_users used for indexing the training dataset
         "train_dataset": train_dataset, 
@@ -500,7 +499,7 @@ def start_evaluation(args):
         "nthread": args.nthread,
         # "train_loader": train_loader,
         "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
-        # "train_loader": train_loader, # used when training teacher from scratch
+        "valid_loader": valid_loader_cifar100,
         "test_loader": test_loader,
         "model_type": "cloud",        
         "batch_size": args.batch_size,
