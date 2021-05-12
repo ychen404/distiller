@@ -25,6 +25,20 @@ def get_optimizer(optim_str, params):
         
         return optim.SGD, optim_args
 
+    elif optim_str.lower() == "adam":
+        if params["model_type"] == "edge":
+            optim_args["momentum"] = params["momentum"]
+            optim_args["lr"] = params["learning_rate"]
+            optim_args["weight_decay"] = params["weight_decay"]
+            optim_args["nesterov"] = not(params["no_nesterov"])
+        else:
+            optim_args["nesterov"] = True
+            optim_args["lr"] = params["cloud_learning_rate"]
+            optim_args["momentum"] = params["cloud_momentum"]
+            optim_args["weight_decay"] = params["cloud_weight_decay"]
+
+        return optim.Adam, optim_args
+
     elif optim_str.lower() == "novograd":
         optim_args["weight_decay"] = params["weight_decay"]
         return NovoGrad, optim_args
@@ -68,7 +82,7 @@ def get_scheduler(sched_str, params):
 
     elif sched_str.lower() == 'cosineannealinglr':
         print("Using cosine annealing lr")
-        sched_args["T_max"] = len(params["train_loader"]) // params["batch_size"]
+        sched_args["T_max"] = len(params["train_loader"])
         tmax = sched_args["T_max"]
         print(f"T_max: {tmax}")
         sched_args["verbose"] = True

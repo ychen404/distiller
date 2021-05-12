@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from numpy import genfromtxt
-
+import time
 
 # Data for plotting
 # filenames = ['try_this_0.csv', 'try_this_1.csv', 'try_this_2.csv', 'try_this_3.csv', 'try_this_4.csv',
@@ -32,8 +32,9 @@ filenames = [
               # 'fedavg_ep5_noupdate_avg.csv',
               # 'fedavg_20_client_avg.csv',
               # 'fedavg_20_client_noupdate_avg.csv',
-              'fedavg_cloud_8_client_noupdate.csv',
-              'fedavg_cloud_8_client.csv'
+              'feddf_cloud_8_client_noupdate.csv',
+              'feddf_cloud_8_client.csv'
+              # 'feddf_cloud_8_client_40_cloud_comm.csv'
               ]
 labels = {}
 
@@ -42,13 +43,15 @@ labels = {}
 # labels['fedavg_ep5_noupdate_avg.csv'] = 'fedavg_8_client_noupdate'
 # labels['fedavg_20_client_avg.csv'] = 'fedavg_20_client'
 # labels['fedavg_20_client_noupdate_avg.csv'] = 'fedavg_20_client_noupdate'
-labels['fedavg_cloud_8_client_noupdate.csv'] = 'fedavg_cloud_8_client_noupdate'
-labels['fedavg_cloud_8_client.csv'] = 'fedavg_cloud_8_client'
+labels['feddf_cloud_8_client_noupdate.csv'] = 'distillation_cloud_8_client_noupdate'
+labels['feddf_cloud_8_client.csv'] = 'distillation_cloud_8_client'
 
-# plot_title = filenames[0].split('.')[0]
+
+# for filename in filenames:
+#        f = filename.split('.')[0]
+#        labels[filename] = f
 
 data = [None for filename in filenames]
-
 
 for i, filename in enumerate(filenames):
        data[i] = genfromtxt(filename, delimiter=',')
@@ -58,10 +61,7 @@ for i, filename in enumerate(filenames):
 
 # t = np.arange(1, 101, 1)
 # t = np.arange(1, 1251, 1)
-
 t = np.arange(1, len(data[0])+1, 1)
-
-
 
 fig, ax = plt.subplots()
 # fig.set_label('label via method')
@@ -73,9 +73,10 @@ for i, filename in enumerate(filenames):
 # plt.legend(handles=[line])
 # handles, labels = ax.get_legend_handles_lables()
 # ax.legend(handles, labels)
-plot_title = 'FedAvg Cloud Accuracy'
-Plot_outputname = 'Accuracy_0501'
-ax.set(xlabel='Rounds', ylabel='Accuracy',
+timestr = time.strftime("%Y%m%d-%H%M%S")
+plot_title = 'Cloud Model Accuracy'
+Plot_outputname = 'Accuracy_' + timestr
+ax.set(xlabel='Epochs', ylabel='Accuracy',
        title=str(plot_title))
 ax.grid()
 print(os.curdir)

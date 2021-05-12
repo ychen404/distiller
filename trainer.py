@@ -120,8 +120,6 @@ class Trainer():
         lr_file_name = folder.joinpath(f"{self.name}_lr.csv")
         
         self.acc_file = acc_file_name.open("w+")
-
-
         self.acc_file.write("Accuracy numbers are recorded every epoch\n")
         self.acc_file.write("Training Acc,Test Acc\n")
 

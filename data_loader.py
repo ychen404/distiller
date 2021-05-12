@@ -128,4 +128,5 @@ def get_cifar(num_classes=100, dataset_dir="./data", batch_size=128, split=0.1,
                                               num_workers=NUM_WORKERS,
                                               pin_memory=True, shuffle=False)
 
+
     return train_loader, test_loader, valid_loader, train_data, test_data

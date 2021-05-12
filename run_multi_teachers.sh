@@ -85,9 +85,39 @@
 #  --cloud_scheduler constant --workspace fedDF \
 #  --log debug --gpu_id 1
 
-    python3 my_main.py --epochs 40 --cloud_epochs 5 --communication_round 250 --edge resnet8 --batch-size 128 \
- --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
- --num_users 8 --edge_update copy \
+#   python3 my_main.py --epochs 40 --cloud_epochs 5 --communication_round 250 --edge resnet8 --batch-size 128 \
+# --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+# --num_users 8 --edge_update copy \
+# --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+# --cloud_scheduler constant --workspace fedDF \
+# --log debug --gpu_id 0
+
+#     python3 my_main.py --epochs 40 --cloud_epochs 40 --communication_round 250 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+#  --num_users 8 --edge_update copy \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+#  --cloud_scheduler constant --workspace fedDF \
+#  --log debug --gpu_id 1
+
+#     python3 my_main.py --epochs 10 --cloud_epochs 10 --communication_round 100 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 \
+#  --num_users 8 --edge_update copy --temperature 1 --cloud_temperature 1 \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+#  --cloud_scheduler constant --workspace fedDF_T_1 \
+#  --log debug --gpu_id 0,1
+
+# 5/11
+# Test bigger batch size
+#     python3 my_main.py --epochs 10 --cloud_epochs 10 --communication_round 100 --edge resnet8 --batch-size 512 \
+#  --cloud resnet8 --dataset cifar10 --mode multiteacher_kd --frac 1 --learning_rate 0.04 \
+#  --num_users 8 --edge_update copy --temperature 1 --cloud_temperature 1 \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+#  --cloud_scheduler constant --workspace test_speed \
+#  --log debug --gpu_id 0,1
+
+    python3 my_main.py --epochs 2 --cloud_epochs 1 --communication_round 2 --edge resnet8 --batch-size 128 \
+ --cloud resnet8 --dataset cifar10 --mode FedDF --frac 1 --learning_rate 0.1 \
+ --num_users 8 --edge_update copy --temperature 1 --cloud_temperature 1 \
  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
- --cloud_scheduler constant --workspace fedDF \
- --log debug --gpu_id 0
+ --cloud_scheduler constant --workspace test_speed \
+ --log debug --gpu_id 2,3

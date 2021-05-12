@@ -37,80 +37,47 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Test parameters")
     
     # federated arguments
-    parser.add_argument("--epochs", default=EPOCHS, type=int,
-                        help="number of total epochs to run on edge")
-    parser.add_argument("--cloud_epochs", default=EPOCHS, type=int,
-                        help="number of epochs epochs to run on cloud")
-    parser.add_argument("--num_users", default=2,
-                        type=int, help="number of users") 
-    parser.add_argument("--communication_round", default=COMMUNICATION_ROUND, type=int,
-                        help="number of total global epochs to run")
+    parser.add_argument("--epochs", default=EPOCHS, type=int, help="number of total epochs to run on edge")
+    parser.add_argument("--cloud_epochs", default=EPOCHS, type=int, help="number of epochs epochs to run on cloud")
+    parser.add_argument("--num_users", default=2, type=int, help="number of users") 
+    parser.add_argument("--communication_round", default=COMMUNICATION_ROUND, type=int, help="number of total global epochs to run")
     parser.add_argument('--frac', default=0.1, type=float, help="the fraction of clients: C")
     parser.add_argument("--batch-size", default=BATCH_SIZE, type=int, help="batch_size")
     
     # model arguments
-    parser.add_argument("--dataset", default="cifar100", type=str,
-                        help="dataset. can be either cifar10 or cifar100")
+    parser.add_argument("--dataset", default="cifar10", type=str, help="dataset. can be either cifar10 or cifar100")
+    parser.add_argument("--edge_update", default="edge_distillation", type=str, help="copy, edge_distillation, and no_update")
+    parser.add_argument("--ed_nolabel", action='store_true', help="remove label in edge distillation")
+    parser.add_argument("--temperature", default=1, type=float, help="temperature for distillation")    
+    parser.add_argument("--edge", default="resnet8", type=str, dest="e_name", help="edge model name")
+    parser.add_argument("--cloud", default="resnet8", type=str, dest="c_name", help="cloud model name")
+    parser.add_argument("--optimizer", default="sgd", dest="optimizer", type=str, help="Which optimizer to use")
     
-    parser.add_argument("--edge_update", default="edge_distillation", type=str,
-                        help="edge model update method can be copy, edge_distillation, and no_update")
-
-    parser.add_argument("--ed_nolabel", action='store_true',
-                        help="remove label in edge distillation")
-
-    # edge distillation is one of the edge update methods
-    # parser.add_argument("--edge_distillation", default=0,
-    #                     type=int, help="enable edge distillation")
-    
+    # learning rate scheme
     parser.add_argument("--learning_rate", default=0.1, type=float, help="initial learning rate")
-    parser.add_argument("--momentum", default=0.9,
-                        type=float, help="SGD momentum")
-    parser.add_argument("--weight-decay", default=5e-4,
-                        type=float, help="SGD weight decay (default: 5e-4)")
+    parser.add_argument("--momentum", default=0.9, type=float, help="SGD momentum")
+    parser.add_argument("--weight-decay", default=5e-4, type=float, help="SGD weight decay (default: 5e-4)")
+    parser.add_argument("--cloud_temperature", default=1, type=float, help="temperature for distillation")
+    parser.add_argument("--cloud_learning_rate", default=0.1, type=float, help="initial learning rate")
+    parser.add_argument("--cloud_momentum", default=0.9, type=float, help="SGD momentum")
+    parser.add_argument("--cloud_weight_decay", default=5e-4, type=float, help="SGD weight decay (default: 5e-4)")
+    parser.add_argument("--no_nesterov", action='store_true',help="disable nesterov on edge")
+    parser.add_argument("--adam_beta_1", default=0.9, type=float)
+    parser.add_argument("--adam_beta_2", default=0.999, type=float)
+    parser.add_argument("--adam_eps", default=1e-8, type=float)
 
-    parser.add_argument("--cloud_learning_rate", default=0.1,
-                        type=float, help="initial learning rate")
-    parser.add_argument("--cloud_momentum", default=0.9,
-                        type=float, help="SGD momentum")
-    parser.add_argument("--cloud_weight_decay", default=5e-4,
-                        type=float, help="SGD weight decay (default: 5e-4)")
-
-    parser.add_argument("--no_nesterov", action='store_true',
-                        help="disable nesterov on edge")
-
-    parser.add_argument("--edge", default="resnet8", type=str,
-                        dest="e_name", help="edge model name")
-    parser.add_argument("--cloud", default="resnet8", type=str, 
-                        dest="c_name", help="cloud model name")
-    parser.add_argument("--optimizer", default="sgd",
-                        dest="optimizer", type=str, help="Which optimizer to use")
-    
     # other arguments
-    parser.add_argument('--gpu_id', default='0', type=str,
-                    help='id(s) for CUDA_VISIBLE_DEVICES')
-    parser.add_argument('--ngpu', default=1, type=int,
-                    help='number of GPUs to use for training')
-    parser.add_argument("--scheduler", default="constant",
-                        dest="scheduler", type=str,
-                        help="Which scheduler to use")
-    parser.add_argument("--cloud_scheduler", default="constant",
-                        dest="cloud_scheduler", type=str,
-                        help="Which scheduler to use for cloud")
-    parser.add_argument("--teacher-checkpoint", default="",
-                        dest="t_checkpoint", type=str,
+    parser.add_argument('--gpu_id', default='0', type=str, help='id(s) for CUDA_VISIBLE_DEVICES')
+    parser.add_argument('--ngpu', default=1, type=int, help='number of GPUs to use for training')
+    parser.add_argument("--scheduler", default="constant", dest="scheduler", type=str, help="Which scheduler to use")
+    parser.add_argument("--cloud_scheduler", default="constant", dest="cloud_scheduler", type=str, help="Which scheduler to use for cloud")
+    parser.add_argument("--teacher-checkpoint", default="", dest="t_checkpoint", type=str,
                         help="optional pretrained checkpoint for teacher")
-    parser.add_argument("--mode", default=["KD"], dest="modes",
-                        type=str, nargs='+',
-                        help="What type of distillation to use")
-    parser.add_argument("--nthread", default=NTHREAD,
-                        type=int, help="number of threads for dataloader")                    
-    parser.add_argument("--workspace", default="",
-                        type=str, help="The prefix for the output files")                    
-    parser.add_argument("--results-dir", default=TESTFOLDER,
-                        dest="results_dir", type=str,
-                        help="Where all results are collected")
-    parser.add_argument("--log", default="info",
-                        help="Provide logging level")
+    parser.add_argument("--mode", default=["FedAvg"], dest="modes", type=str, nargs='+', help="What type of distillation to use")
+    parser.add_argument("--nthread", default=NTHREAD, type=int, help="number of threads for dataloader")                    
+    parser.add_argument("--workspace", default="", type=str, help="The prefix for the output files")                    
+    parser.add_argument("--results-dir", default=TESTFOLDER, type=str, help="Where all results are collected")
+    parser.add_argument("--log", default="info", help="Provide logging level")
 
     args = parser.parse_args()
 
@@ -301,8 +268,8 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
         
 
         # We select how to aggregate the edge models
-        if mode == "multiteacher_kd":
-            logger.info("==== Multiteacher_kd mode ====")
+        if mode == "feddf":
+            logger.info("==== FedDF mode ====")
 
             # Update learning rate 
             # def cosine_annealing(epoch, n_epochs, n_cycles, lrate_max):
@@ -486,7 +453,8 @@ def start_evaluation(args):
         # fixed knowledge distillation parameters
         # Change lambda_student from 0.5 to 1 to remove the impact from labels
         "lambda": 1,
-        "T": 5,
+        "T": args.temperature,
+
     }
 
     # This set of parameters is for distillation 
@@ -522,11 +490,14 @@ def start_evaluation(args):
         # fixed knowledge distillation parameters
         # Change lambda_student from 0.5 to 1 to remove the impact from labels
         "lambda": 1,
-        "T": 5,
+        "T": args.cloud_temperature,
+
     }
 
     test_conf_name = results_dir.joinpath("test_config.json")
     util.dump_json_config(test_conf_name, params_edge)
+    test_conf_name = results_dir.joinpath("cloud_test_config.json")
+    util.dump_json_config(test_conf_name, params_cloud)
     run_benchmarks(args.modes, args, params_edge, params_cloud, args.c_name, args.e_name)
     
     # skip plot for now, too confusing when there are multiple edge models

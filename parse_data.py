@@ -126,8 +126,12 @@ def parse_cloud(path, csv_name):
     
 if __name__ == "__main__":
     path = sys.argv[1]
+    csv_name = sys.argv[2]
     # parse_edge(path, 'fedavg_20_client_noupdate')
-    parse_cloud(path, 'fedavg_cloud_8_client_noupdate')
+    # parse_cloud(path, 'feddf_cloud_8_client')
+    # parse_cloud(path, 'feddf_cloud_20_client_noupdate')
+    parse_cloud(path, csv_name)
+
     # output_path = str(new_path)
     # print(output_path)
     # plot_results(output_filenames, output_path)
