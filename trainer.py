@@ -41,7 +41,7 @@ def init_progress_bar(train_loader):
 
 class Trainer():
     # def __init__(self, net, config):
-    def __init__(self, net, config, idxs=None):
+    def __init__(self, net, config, user_id, idxs=None):
         self.net = net
         self.device = config["device"]
         self.name = config["test_name"]
@@ -97,13 +97,18 @@ class Trainer():
         self.batch_size = config["batch_size"]
         self.config = config
         
-
+        # pdb.set_trace()
         # Override the train_loader with the sampled one if indexes are provided 
-        if self.model_type == "edge":
+        # Compatible with previous version
+        if self.model_type == "edge" and idxs is not None:
             # edge models need data partition
             self.data_split = DatasetSplit(self.train_dataset, self.indexs)
             self.train_loader = DataLoader(self.data_split, batch_size=self.batch_size, 
                     shuffle=True, num_workers=self.config["nthread"], pin_memory=torch.cuda.is_available())
+
+        # Use non-iid case here
+        elif self.model_type == "edge" and idxs is None:
+            self.train_loader = config['client_loaders'][user_id]
 
         elif self.model_type == "cloud":
             # cloud model uses cifar100 train loader from the config file

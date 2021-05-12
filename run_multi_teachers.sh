@@ -115,9 +115,16 @@
 #  --cloud_scheduler constant --workspace test_speed \
 #  --log debug --gpu_id 0,1
 
-    python3 my_main.py --epochs 2 --cloud_epochs 1 --communication_round 2 --edge resnet8 --batch-size 128 \
- --cloud resnet8 --dataset cifar10 --mode FedDF --frac 1 --learning_rate 0.1 \
- --num_users 8 --edge_update copy --temperature 1 --cloud_temperature 1 \
+#     python3 my_main.py --epochs 10 --cloud_epochs 10 --communication_round 100 --edge resnet8 --batch-size 128 \
+#  --cloud resnet8 --dataset cifar10 --mode FedDF --frac 1 --learning_rate 0.1 --cloud_optimizer adam\
+#  --num_users 8 --edge_update copy --temperature 1 --cloud_temperature 1 \
+#  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
+#  --cloud_scheduler cosineannealinglr --workspace FedDF_adam \
+#  --log debug --gpu_id 2,3
+
+     python3 my_main.py --epochs 3 --cloud_epochs 1 --communication_round 3 --edge resnet8 --batch-size 128 \
+ --cloud resnet8 --dataset cifar10 --mode FedDF --frac 1 --learning_rate 0.1 --cloud_optimizer adam\
+ --num_users 4 --edge_update copy --temperature 1 --cloud_temperature 1 \
  --scheduler constant --weight-decay 0 --momentum 0 --no_nesterov --cloud_learning_rate 0.001 \
- --cloud_scheduler constant --workspace test_speed \
+ --cloud_scheduler cosineannealinglr --workspace test_loader \
  --log debug --gpu_id 2,3

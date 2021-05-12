@@ -25,17 +25,21 @@ def get_optimizer(optim_str, params):
         
         return optim.SGD, optim_args
 
+    # Use on the cloud mostly
     elif optim_str.lower() == "adam":
+        print("Using adam optimizer")
         if params["model_type"] == "edge":
             optim_args["momentum"] = params["momentum"]
             optim_args["lr"] = params["learning_rate"]
             optim_args["weight_decay"] = params["weight_decay"]
             optim_args["nesterov"] = not(params["no_nesterov"])
         else:
-            optim_args["nesterov"] = True
+            # optim_args["nesterov"] = True
             optim_args["lr"] = params["cloud_learning_rate"]
-            optim_args["momentum"] = params["cloud_momentum"]
             optim_args["weight_decay"] = params["cloud_weight_decay"]
+            # optim_args["betas"][0] = params["adam_beta_1"]
+            # optim_args["betas"][1] = params["adam_beta_2"]
+            # optim_args["eps"] = params["adam_eps"]
 
         return optim.Adam, optim_args
 
@@ -82,7 +86,8 @@ def get_scheduler(sched_str, params):
 
     elif sched_str.lower() == 'cosineannealinglr':
         print("Using cosine annealing lr")
-        sched_args["T_max"] = len(params["train_loader"])
+        sched_args["T_max"] = len(params["train_loader"]) // params["batch_size"]
+        # sched_args["T_max"] = params["epochs"]
         tmax = sched_args["T_max"]
         print(f"T_max: {tmax}")
         sched_args["verbose"] = True

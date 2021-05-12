@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 
 # from distillers import *
-from data_loader import get_cifar
+from data_loader import *
 from models.model_factory import create_model
 
 from trainer import BaseTrainer, KDTrainer, MultiTeacher, KDTrainerNoLabel
@@ -42,7 +42,12 @@ def parse_arguments():
     parser.add_argument("--num_users", default=2, type=int, help="number of users") 
     parser.add_argument("--communication_round", default=COMMUNICATION_ROUND, type=int, help="number of total global epochs to run")
     parser.add_argument('--frac', default=0.1, type=float, help="the fraction of clients: C")
+
+    parser.add_argument('--random_seed', default=2, type=int)
+    parser.add_argument('--alpha', default=100, type=int, help="alpha for dirichlet distribution")
+    
     parser.add_argument("--batch-size", default=BATCH_SIZE, type=int, help="batch_size")
+
     
     # model arguments
     parser.add_argument("--dataset", default="cifar10", type=str, help="dataset. can be either cifar10 or cifar100")
@@ -52,6 +57,8 @@ def parse_arguments():
     parser.add_argument("--edge", default="resnet8", type=str, dest="e_name", help="edge model name")
     parser.add_argument("--cloud", default="resnet8", type=str, dest="c_name", help="cloud model name")
     parser.add_argument("--optimizer", default="sgd", dest="optimizer", type=str, help="Which optimizer to use")
+    parser.add_argument("--cloud_optimizer", default="adam", type=str, help="Which optimizer to use")
+
     
     # learning rate scheme
     parser.add_argument("--learning_rate", default=0.1, type=float, help="initial learning rate")
@@ -95,7 +102,7 @@ def setup_edge(edge_name, edge_params):
     return t_net
 
 @Timer(text='train_edge in {:.4f} seconds')
-def train_edge(current_round, edge_net, edge_params, edge_name, partition_idx, edge_suffix):
+def train_edge(current_round, edge_net, user_id, edge_params, edge_name, partition_idx, edge_suffix):
     
     # logger.info("Training edge model")
     # defrost because from the seoncd round the edge models are frozen during distillation
@@ -107,7 +114,8 @@ def train_edge(current_round, edge_net, edge_params, edge_name, partition_idx, e
 
     # Trainer wraps the training related functions together
     logger.debug(f"The partition idx is {partition_idx}")
-    edge_trainer = BaseTrainer(edge_net, config=edge_config, idxs=dict_users[partition_idx])
+    # edge_trainer = BaseTrainer(edge_net, config=edge_config, idxs=dict_users[partition_idx])
+    edge_trainer = BaseTrainer(edge_net, config=edge_config, user_id=user_id)
     edge_trainer.train(current_round)
     edge_ckpt = edge_trainer.model_file
 
@@ -217,6 +225,8 @@ def print_model_parameters(model):
 
 def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
+    t0 = time.time()
+
     # Extract the mode
     mode = modes[0]
     mode = mode.lower()
@@ -227,8 +237,8 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     logger.debug(f"params['num_users'] = {params_edge['num_users']}")
     m = max(int(args.frac * args.num_users), 1)
     idxs_users = np.random.choice(range(args.num_users), m, replace=False)
+    
     logger.debug(f"idx_users: {idxs_users}")
-    # pdb.set_trace()
     
     for user, partition_idx in enumerate (idxs_users):
         logger.info(f"Edge model: {user + 1}, partition_idx: {partition_idx}")
@@ -248,7 +258,10 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     
     # Loop through the communication rounds
     start = time.time()
+    # t1 = start
+    logger.info(f"Prep time: {start - t0}")
     for i in range(0, params_edge["communication_round"]):
+        t1 = time.time()
         logger.info(f"Starting {i} communication_round")
         
         # Save every round of data in separate directories
@@ -260,10 +273,12 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
         util.check_dir(params_cloud["results_dir"])
         
         # Train all the edge models
+        
+        # skip edge for now
         for user, partition_idx in enumerate (idxs_users):
             logger.info(f"Training {user + 1}th edge model")
             # TODO: The edge_config here may need to change for heterogeneous model case
-            edge_net, _, edge_config = train_edge(current_round, edge_nets[user], params_edge, e_name, 
+            edge_net, _, edge_config = train_edge(current_round, edge_nets[user], user, params_edge, e_name, 
                                                             partition_idx, edge_suffix='_edge_'+ str(user))
         
 
@@ -276,6 +291,7 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             # cloud_learning_rate = cosine_annealing()
 
             # Multi edge models perform distillation to the cloud model
+            
             cloud_acc[mode], cloud_ckpt, trained_cloud_net, _edge_nets = multi_edge_kd(current_round, cloud_net, 
                                                                     edge_nets, params_cloud)                
 
@@ -318,6 +334,13 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 logger.info("Please provide edge update method")
                 exit()
 
+            # round_time = int((time.time()-t1))
+            # # logger.debug(f"round time: {round_time}")
+            # remaining_rounds = params_edge['communication_round'] - current_round - 1
+            # #  /current_round*(params_edge['communication_round']-current_round))
+            # remaing_time = remaining_rounds * round_time
+            # logger.info(f"Remaining Time (approx.): {remaing_time // 3600 :02d}:{remaing_time % 3600 // 60 :02d}:{remaing_time % 60 :02d}")
+            
         elif mode == "fedavg":
             # need to merge fedavg to here
             logger.info("==== FedAvg mode ====")
@@ -360,7 +383,15 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
         else:
             print("No kd mode selected")
             exit()
-    
+        
+        # Calculate and the end of each round
+        round_time = int((time.time()-t1))
+        logger.debug(f"round time: {round_time}")
+        remaining_rounds = params_edge['communication_round'] - current_round - 1
+        #  /current_round*(params_edge['communication_round']-current_round))
+        remaing_time = remaining_rounds * round_time
+        logger.info(f"Remaining Time (approx.): {remaing_time // 3600 :02d}:{remaing_time % 3600 // 60 :02d}:{remaing_time % 60 :02d}")
+
     end = time.time()
     logger.debug(f"Time elapse: {(end - start)}")
     results_dir_path = params_edge["results_dir"]
@@ -370,13 +401,34 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 def start_evaluation(args):
     
     device = util.setup_torch(args.gpu_id)
-
     num_classes = 100 if args.dataset == "cifar100" else 10
     num_classes_distillation = 100
-    
-    # No validation split for edge workers
-    train_loader, test_loader, _, train_dataset, test_dataset = get_cifar(num_classes,
-                                          batch_size=args.batch_size, split=0)
+
+    # Save 5% data for validation in the cloud
+    # train_loader, test_loader, valid_loader, train_dataset, test_dataset = get_cifar(num_classes,
+    #                                       batch_size=args.batch_size, split=0.05)
+
+    _, _, _, train_dataset, test_dataset = get_cifar(num_classes, batch_size=args.batch_size, split=0.05)
+    train_set, val_set = split_train_data(train_dataset, split=0.05)
+
+    ################# non-iid distribution #################
+
+    client_loaders, val_loader, test_loader = get_loaders(train_set, 
+                                                train_dataset.targets, 
+                                                val_set,
+                                                test_dataset, 
+                                                n_clients=args.num_users, 
+                                                alpha=args.alpha, 
+                                                batch_size=args.batch_size, 
+                                                n_data=None, 
+                                                num_workers=args.nthread, 
+                                                seed=args.random_seed, 
+                                                split=0.05)
+
+    # pdb.set_trace()
+    # client_loaders, test_loader = get_loaders(train_dataset, test_dataset, n_clients=args.num_users, 
+    #     alpha=args.alpha, batch_size=args.batch_size, n_data=None, num_workers=args.nthread, seed=args.random_seed)
+    #########################################################
 
     dict_users = cifar_iid(train_dataset, args.num_users)
 
@@ -433,7 +485,9 @@ def start_evaluation(args):
         # "train_loader": train_loader, # used when training teacher from scratch
         "test_loader": test_loader,
         # dataset objects are used to support indexing
-        # the dict_users used for indexing the training dataset
+        
+        # client loaders
+        "client_loaders": client_loaders,
         "train_dataset": train_dataset, 
         # "test_dataset": test_dataset,
         "dict_users": dict_users, 
@@ -479,9 +533,8 @@ def start_evaluation(args):
         # hyperparameters
         # "weight_decay": args.weight_decay,
         # "momentum": args.momentum,
-        "sched": args.scheduler,
-        "optim": args.optimizer,
-
+        # "sched": args.scheduler,
+        "optim": args.cloud_optimizer,
         "cloud_learning_rate": args.cloud_learning_rate,
         "cloud_weight_decay": args.cloud_weight_decay,
         "cloud_momentum": args.cloud_momentum,
