@@ -18,7 +18,7 @@ import logging
 import time
 import numpy as np
 from utils.timer import Timer
-from aggregate_method.Fed import FedAvg, cosine_annealing
+from aggregate_method.Fed import FedAvg
 import copy
 
 BATCH_SIZE = 128
@@ -522,6 +522,7 @@ def start_evaluation(args):
         # "train_loader": train_loader,
         "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
         "valid_loader": valid_loader_cifar100,
+        "val_cifar10": val_loader,
         "test_loader": test_loader,
         "model_type": "cloud",        
         "batch_size": args.batch_size,

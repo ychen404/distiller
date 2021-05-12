@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, Dataset
 from optimizer import get_optimizer, get_scheduler
 import pdb
 from aggregate_method.early_stopping import EarlyStopping
+import numpy as np
 
 
 class DatasetSplit(Dataset):
@@ -41,7 +42,7 @@ def init_progress_bar(train_loader):
 
 class Trainer():
     # def __init__(self, net, config):
-    def __init__(self, net, config, user_id, idxs=None):
+    def __init__(self, net, config, user_id=None, idxs=None):
         self.net = net
         self.device = config["device"]
         self.name = config["test_name"]
@@ -73,15 +74,16 @@ class Trainer():
         if self.model_type == "cloud":
         
             # to track the training loss as the model trains
-            train_losses = []
+            self.train_losses = []
             # to track the validation loss as the model trains
-            valid_losses = []
+            self.valid_losses = []
             # to track the average training loss per epoch as the model trains
-            avg_train_losses = []
+            self.avg_train_losses = []
             # to track the average validation loss per epoch as the model trains
-            avg_valid_losses = [] 
+            self.avg_valid_losses = [] 
         
-            early_stopping = EarlyStopping(patience=20, verbose=True)
+            self.early_stopping = EarlyStopping(patience=20, verbose=True)
+
 
         print(f"Model type: {self.model_type}")
         # There is no train_dataset for cloud model; it loads the cifar100 train loader directly
@@ -185,7 +187,7 @@ class Trainer():
         return total_acc
 
     def get_accuracy(self, current_round):
-        val_acc = self.validate(current_round)
+        val_acc = self.test(current_round)
         self.acc_file.write(f"None,{val_acc}\n")
 
 
@@ -203,7 +205,7 @@ class Trainer():
             # perform training
             train_acc = self.train_single_epoch(t_bar)
             # validate the output 
-            val_acc = self.validate(current_round, epoch)
+            val_acc = self.test(current_round, epoch)
             
             # Save the intermediate model
             # self.save(epoch, name='test_' + str(epoch))
@@ -228,12 +230,77 @@ class Trainer():
 
             # print(f"acc_file, train_acc, val_acc: {self.acc_file}, {train_acc}, {val_acc}")
             # exit()
+
+            ######################    
+            # validate the model #
+            ######################
+
+            if self.model_type == "cloud":
+
+                valid_loader = self.config["val_cifar10"]
+                self.net.eval() # prep model for evaluation
+                
+                for data, target in valid_loader:
+                
+                    data = data.to(self.device, non_blocking=True)
+                    target = target.to(self.device, non_blocking=True)
+                    # forward pass: compute predicted outputs by passing inputs to the model
+                    output = self.net(data)
+                    # calculate the loss
+                    loss = self.loss_fun(output, target)
+                    # record validation loss
+                    self.valid_losses.append(loss.item())
+                
+                # print training/validation statistics 
+                # calculate average loss over an epoch
+                train_loss = np.average(self.train_losses)
+                valid_loss = np.average(self.valid_losses)
+                self.avg_train_losses.append(train_loss)
+                self.avg_valid_losses.append(valid_loss)
+                
+                epoch_len = len(str(epochs))
+                
+                print_msg = (f'[{epoch:>{epoch_len}}/{epochs:>{epoch_len}}] ' +
+                            f'train_loss: {train_loss:.5f} ' +
+                            f'valid_loss: {valid_loss:.5f}')
+                
+                print(print_msg)
+            
+                # clear lists to track next epoch
+                self.train_losses = []
+                self.valid_losses = []
+                
+                # early_stopping needs the validation loss to check if it has decresed, 
+                # and if it has, it will make a checkpoint of the current model
+                self.early_stopping(valid_loss, self.net)
+                
+                if self.early_stopping.early_stop:
+                    print("Early stopping")
+                    break
+                
+                # load the last checkpoint with the best model
+                self.net.load_state_dict(torch.load('checkpoint.pt'))
+
         tqdm.clear(t_bar)
         t_bar.close()
         self.acc_file.close()
 
+    # def validate(self, valid_losses):
+        # valid_loader = config["val_cifar10"]
+        # ######################    
+        # # validate the model #
+        # ######################
+        # self.net.eval() # prep model for evaluation
+        # for data, target in valid_loader:
+        #     # forward pass: compute predicted outputs by passing inputs to the model
+        #     output = self.net(data)
+        #     # calculate the loss
+        #     loss = self.loss_fun(output, target)
+        #     # record validation loss
+        #     valid_losses.append(loss.item())
 
-    def validate(self, current_round, epoch=0):
+
+    def test(self, current_round, epoch=0):
         self.net.eval()
         acc = 0.0
         with torch.no_grad():
