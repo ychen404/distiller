@@ -44,8 +44,7 @@ def parse_arguments():
     parser.add_argument("--mode", default=["KD"], dest="modes",
                         type=str, nargs='+',
                         help="What type of distillation to use")
-    parser.add_argument("--results-dir", default=TESTFOLDER,
-         split dest="results_dir", type=str,
+    parser.add_argument("--results-dir", default=TESTFOLDER, dest="results_dir", type=str,
                         help="Where all results are collected")
     args = parser.parse_args()
     return args

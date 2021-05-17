@@ -72,6 +72,8 @@ def parse_arguments():
     parser.add_argument("--adam_beta_1", default=0.9, type=float)
     parser.add_argument("--adam_beta_2", default=0.999, type=float)
     parser.add_argument("--adam_eps", default=1e-8, type=float)
+    parser.add_argument("--patience", default=3, type=float)
+
 
     # other arguments
     parser.add_argument('--gpu_id', default='0', type=str, help='id(s) for CUDA_VISIBLE_DEVICES')
@@ -113,7 +115,7 @@ def train_edge(current_round, edge_net, user_id, edge_params, edge_name, partiti
     # pdb.set_trace()
 
     # Trainer wraps the training related functions together
-    logger.debug(f"The partition idx is {partition_idx}")
+    # logger.debug(f"The partition idx is {partition_idx}")
     # edge_trainer = BaseTrainer(edge_net, config=edge_config, idxs=dict_users[partition_idx])
     edge_trainer = BaseTrainer(edge_net, config=edge_config, user_id=user_id)
     edge_trainer.train(current_round)
@@ -185,6 +187,7 @@ def dummy_trainer(current_round, cloud_net, params):
 @Timer(text='edge_distillation in {:.4f} seconds')
 def edge_distillation(current_round, edge_net, cloud_net, params_edge, edge_name, partition_idx, edge_suffix):
 
+    # TODO: need to remove the partition idx as well
     edge_net = defrost_net(edge_net)
     # logger.info("---------- Edge distillation -------")
     cloud_net = freeze_net(cloud_net)
@@ -223,6 +226,13 @@ def print_model_parameters(model):
         logger.debug(f'param.requires_grad: {param.requires_grad}')
         logger.debug(f'=====')
 
+def select_users(num_users, frac):
+    m = max(int(num_users * frac), 1)
+    participating_users = np.random.choice(range(num_users), m, replace=False)
+
+    return participating_users
+    
+
 def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
 
     t0 = time.time()
@@ -235,13 +245,16 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     # Setup the edge model
     edge_nets = []
     logger.debug(f"params['num_users'] = {params_edge['num_users']}")
-    m = max(int(args.frac * args.num_users), 1)
-    idxs_users = np.random.choice(range(args.num_users), m, replace=False)
     
-    logger.debug(f"idx_users: {idxs_users}")
-    
-    for user, partition_idx in enumerate (idxs_users):
-        logger.info(f"Edge model: {user + 1}, partition_idx: {partition_idx}")
+
+    # m = max(int(args.frac * args.num_users), 1)
+    # selected_users = np.random.choice(range(args.num_users), m, replace=False)
+    # logger.debug(f"selected users: {selected_users}")
+    participating_users = select_users(args.num_users, args.frac)
+    logger.debug(f"selected users: {participating_users}")
+
+    for user, _ in enumerate (participating_users):
+        logger.info(f"Edge model: {user + 1}")
         edge_net = setup_edge(e_name, params_edge)
         edge_nets.append(edge_net)
 
@@ -275,11 +288,11 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
         # Train all the edge models
         
         # skip edge for now
-        for user, partition_idx in enumerate (idxs_users):
+        for user, _ in enumerate (participating_users):
             logger.info(f"Training {user + 1}th edge model")
             # TODO: The edge_config here may need to change for heterogeneous model case
             edge_net, _, edge_config = train_edge(current_round, edge_nets[user], user, params_edge, e_name, 
-                                                            partition_idx, edge_suffix='_edge_'+ str(user))
+                                                            partition_idx=None, edge_suffix='_edge_'+ str(user))
         
 
         # We select how to aggregate the edge models
@@ -305,7 +318,7 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 # Return the all the edge models after performing edge distillation in case need it
                 # edge_config instead of edge_params is used here becase the test_name field is added to the edge_config only
         
-                for user, partition_idx in enumerate (idxs_users):
+                for user, partition_idx in enumerate (participating_users):
                     logger.info(f"Edge distillation {user + 1}th edge model")
                     # edge_net, _, edge_config = train_edge(current_round, edge_nets[user], params_edge, e_name, 
                     #                                             partition_idx, edge_suffix='_edge_'+ str(user))    
@@ -325,8 +338,8 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 cloud_weights = cloud_loaded.state_dict()
                 cloud_weights_copy = copy.deepcopy(cloud_weights)
 
-                logger.debug(f"idxs_users: {idxs_users}")
-                for user, partition_idx in enumerate (idxs_users):
+                logger.debug(f"idxs_users: {participating_users}")
+                for user, _ in enumerate (participating_users):
                     logger.info(f"Copying cloud model to the {user + 1}th edge model")                   
                     edge_nets[user].load_state_dict(cloud_weights_copy)
 
@@ -346,10 +359,10 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
             logger.info("==== FedAvg mode ====")
             w_edge_models = []
             # create placeholder for all the edge weights
-            all_edge_weights = [None for user in idxs_users]
+            all_edge_weights = [None for user in participating_users]
             
             # Perform FedAvg            
-            for user, partition_idx in enumerate (idxs_users):
+            for user, _ in enumerate (participating_users):
                 w = edge_nets[user].state_dict()
                 all_edge_weights[user] = copy.deepcopy(w)               
             averaged_weights = FedAvg(all_edge_weights)
@@ -372,7 +385,7 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 # directly copy from the averaged weights produced by FedAvg
                 # assert the cloud and edge model arch first 
                 # for user in idxs_users:
-                for user, partition_idx in enumerate (idxs_users):
+                for user, _ in enumerate (participating_users):
 
                     logger.info(f"Copying cloud model to the {user + 1}th edge model")
                     edge_nets[user].load_state_dict(averaged_weights)
@@ -540,6 +553,7 @@ def start_evaluation(args):
         "cloud_weight_decay": args.cloud_weight_decay,
         "cloud_momentum": args.cloud_momentum,
         "cloud_sched": args.cloud_scheduler,
+        "patience": args.patience,
 
         # fixed knowledge distillation parameters
         # Change lambda_student from 0.5 to 1 to remove the impact from labels
@@ -552,6 +566,7 @@ def start_evaluation(args):
     util.dump_json_config(test_conf_name, params_edge)
     test_conf_name = results_dir.joinpath("cloud_test_config.json")
     util.dump_json_config(test_conf_name, params_cloud)
+    
     run_benchmarks(args.modes, args, params_edge, params_cloud, args.c_name, args.e_name)
     
     # skip plot for now, too confusing when there are multiple edge models

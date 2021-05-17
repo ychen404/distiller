@@ -81,8 +81,7 @@ class Trainer():
             self.avg_train_losses = []
             # to track the average validation loss per epoch as the model trains
             self.avg_valid_losses = [] 
-        
-            self.early_stopping = EarlyStopping(patience=20, verbose=True)
+            self.early_stopping = EarlyStopping(patience=config["patience"], verbose=True)
 
 
         print(f"Model type: {self.model_type}")
