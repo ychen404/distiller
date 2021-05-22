@@ -8,7 +8,13 @@ from optimizer import get_optimizer, get_scheduler
 import pdb
 from aggregate_method.early_stopping import EarlyStopping
 import numpy as np
+import logging
 
+# fmt_str = '%(name)s - %(levelname)s - %(message)s'
+logger = logging.getLogger(__name__)
+# logging.basicConfig(level='DEBUG', format=fmt_str)
+logger.setLevel('INFO')
+# logger.setLevel('DEBUG')
 
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
@@ -30,7 +36,9 @@ def init_progress_bar(train_loader):
     bar_format += " {n_fmt}/{total_fmt} [{elapsed} < {remaining}]"
     bar_format += "{postfix}"
     # if stderr has no tty disable the progress bar
-    disable = not sys.stderr.isatty()
+    # disable = not sys.stderr.isatty()
+    # turn off the bar
+    disable = True
     # print(f"###################### disable = {disable} ###########################")
 
     t = tqdm(total=len(train_loader) * batch_size,
@@ -48,7 +56,7 @@ class Trainer():
         self.name = config["test_name"]
         # Retrieve preconfigured optimizers and schedulers for all runs
         optim = config["optim"]
-        
+         
         # The sampler works with the dataset object instead of the dataloader object
         self.model_type = config["model_type"]
         
@@ -67,7 +75,6 @@ class Trainer():
         # remove the full data loader
 
         self.test_loader = config["test_loader"]
-        
 
         # initialize the early_stopping object
 
@@ -81,10 +88,12 @@ class Trainer():
             self.avg_train_losses = []
             # to track the average validation loss per epoch as the model trains
             self.avg_valid_losses = [] 
+            # add the early stop batches
+            self.early_stop_batches = 1000
+       
             self.early_stopping = EarlyStopping(patience=config["patience"], verbose=True)
 
-
-        print(f"Model type: {self.model_type}")
+        logger.debug(f"Model type: {self.model_type}")
         # There is no train_dataset for cloud model; it loads the cifar100 train loader directly
         if self.model_type == "edge":
             self.train_dataset = config["train_dataset"]
@@ -101,6 +110,7 @@ class Trainer():
         # pdb.set_trace()
         # Override the train_loader with the sampled one if indexes are provided 
         # Compatible with previous version
+        # This data partition method is obsolete
         if self.model_type == "edge" and idxs is not None:
             # edge models need data partition
             self.data_split = DatasetSplit(self.train_dataset, self.indexs)
@@ -158,10 +168,6 @@ class Trainer():
         else: 
             len_train_set = len(self.train_loader.dataset)
 
-        # division = 20
-        # portion_data = len(self.train_loader) // division
-        # print(self.train_loader.dataset)
-        # pdb.set_trace()
         for batch_idx, (x, y) in enumerate(self.train_loader):
             # if batch_idx > portion_data:
             #     break
@@ -181,7 +187,15 @@ class Trainer():
         
             t_bar.update(self.batch_size)
             t_bar.set_postfix_str(f"Acc {curr_acc:.3f}% Loss {curr_loss:.3f}")
-        
+
+            # update after each batch
+            if self.scheduler:
+                self.scheduler.step()
+                if self.model_type == "cloud":
+                    cloud_lr = self.scheduler.get_last_lr()
+                    self.lr_file.write(f"{cloud_lr}\n")
+                    # print(f"Cloud lr: {cloud_lr}")
+
         total_acc = float(total_correct / len_train_set)
         return total_acc
 
@@ -194,6 +208,7 @@ class Trainer():
         epochs = self.config["epochs"]
         
         if self.model_type == "cloud":
+            # pdb.set_trace()
             cloud_lr = self.config["cloud_learning_rate"]
 
         t_bar = init_progress_bar(self.train_loader)
@@ -201,26 +216,25 @@ class Trainer():
             # update progress bar
             t_bar.reset()
             t_bar.set_description(f"Round {current_round} | Epoch {epoch}")
+           
             # perform training
             train_acc = self.train_single_epoch(t_bar)
             # validate the output 
             val_acc = self.test(current_round, epoch)
             
-            # Save the intermediate model
-            # self.save(epoch, name='test_' + str(epoch))
-
             # if val_acc > best_acc:
             #     best_acc = val_acc
              
             self.save(epoch, name=self.model_file)
 
             # update the scheduler
-            if self.scheduler:
-                self.scheduler.step()
-                if self.model_type == "cloud":
-                    cloud_lr = self.scheduler.get_last_lr()
-                    self.lr_file.write(f"{cloud_lr}\n")
-                    print(f"Cloud lr: {cloud_lr}")
+            # The scheduler should be updated every batch, not every epochs
+            # if self.scheduler:
+            #     self.scheduler.step()
+            #     if self.model_type == "cloud":
+            #         cloud_lr = self.scheduler.get_last_lr()
+            #         self.lr_file.write(f"{cloud_lr}\n")
+            #         print(f"Cloud lr: {cloud_lr}")
 
             self.acc_file.write(f"{train_acc},{val_acc}\n")
             
@@ -233,92 +247,99 @@ class Trainer():
             ######################    
             # validate the model #
             ######################
+            ####### start of validate ####### 
+            # if self.model_type == "cloud":
 
-            if self.model_type == "cloud":
-
-                valid_loader = self.config["val_cifar10"]
-                self.net.eval() # prep model for evaluation
+            #     valid_loader = self.config["val_cifar10"]
+            #     self.net.eval() # prep model for evaluation
                 
-                for data, target in valid_loader:
+            #     for data, target in valid_loader:
                 
-                    data = data.to(self.device, non_blocking=True)
-                    target = target.to(self.device, non_blocking=True)
-                    # forward pass: compute predicted outputs by passing inputs to the model
-                    output = self.net(data)
-                    # calculate the loss
-                    loss = self.loss_fun(output, target)
-                    # record validation loss
-                    self.valid_losses.append(loss.item())
+            #         data = data.to(self.device, non_blocking=True)
+            #         target = target.to(self.device, non_blocking=True)
+            #         # forward pass: compute predicted outputs by passing inputs to the model
+            #         output = self.net(data)
+            #         # calculate the loss
+            #         loss = self.loss_fun(output, target)
+            #         # record validation loss
+            #         self.valid_losses.append(loss.item())
                 
-                # print training/validation statistics 
-                # calculate average loss over an epoch
-                train_loss = np.average(self.train_losses)
-                valid_loss = np.average(self.valid_losses)
-                self.avg_train_losses.append(train_loss)
-                self.avg_valid_losses.append(valid_loss)
+            #     # print training/validation statistics 
+            #     # calculate average loss over an epoch
+            #     train_loss = np.average(self.train_losses)
+            #     valid_loss = np.average(self.valid_losses)
+            #     self.avg_train_losses.append(train_loss)
+            #     self.avg_valid_losses.append(valid_loss)
                 
-                epoch_len = len(str(epochs))
+            #     epoch_len = len(str(epochs))
                 
-                print_msg = (f'[{epoch:>{epoch_len}}/{epochs:>{epoch_len}}] ' +
-                            f'train_loss: {train_loss:.5f} ' +
-                            f'valid_loss: {valid_loss:.5f}')
+            #     print_msg = (f'[{epoch:>{epoch_len}}/{epochs:>{epoch_len}}] ' +
+            #                 f'train_loss: {train_loss:.5f} ' +
+            #                 f'valid_loss: {valid_loss:.5f}')
                 
-                print(print_msg)
+            #     logger.debug(print_msg)
             
-                # clear lists to track next epoch
-                self.train_losses = []
-                self.valid_losses = []
+            #     # clear lists to track next epoch
+            #     self.train_losses = []
+            #     self.valid_losses = []
                 
-                # early_stopping needs the validation loss to check if it has decresed, 
-                # and if it has, it will make a checkpoint of the current model
-                self.early_stopping(valid_loss, self.net)
+            #     # early_stopping needs the validation loss to check if it has decresed, 
+            #     # and if it has, it will make a checkpoint of the current model
+            #     self.early_stopping(valid_loss, self.net)
                 
-                if self.early_stopping.early_stop:
-                    print("Early stopping")
-                    break
+            #     if self.early_stopping.early_stop:
+            #         logger.debug("Early stopping")
+            #         break
                 
-                # load the last checkpoint with the best model
-                self.net.load_state_dict(torch.load('checkpoint.pt'))
+            #     # load the last checkpoint with the best model
+            #     self.net.load_state_dict(torch.load('checkpoint.pt'))
 
         tqdm.clear(t_bar)
         t_bar.close()
         self.acc_file.close()
 
-    # def validate(self, valid_losses):
-        # valid_loader = config["val_cifar10"]
-        # ######################    
-        # # validate the model #
-        # ######################
-        # self.net.eval() # prep model for evaluation
-        # for data, target in valid_loader:
-        #     # forward pass: compute predicted outputs by passing inputs to the model
-        #     output = self.net(data)
-        #     # calculate the loss
-        #     loss = self.loss_fun(output, target)
-        #     # record validation loss
-        #     valid_losses.append(loss.item())
-
-
     def test(self, current_round, epoch=0):
         self.net.eval()
         acc = 0.0
         with torch.no_grad():
-            correct = 0
-            acc = 0
+            # correct = 0
+            # acc = 0
+
+            test_loss = 0
+            test_correct = 0
+            total = 0
+
             for images, labels in self.test_loader:
                 images = images.to(self.device)
                 labels = labels.to(self.device)
                 output = self.net(images)
                 # Standard Learning Loss ( Classification Loss)
                 loss = self.loss_fun(output, labels)
-                # get the index of the max log-probability
-                pred = output.data.max(1, keepdim=True)[1]
-                correct += pred.eq(labels.data.view_as(pred)).cpu().sum()
 
-            acc = float(correct) / len(self.test_loader.dataset)
-            print(f"\nRound {current_round} | Epoch {epoch}: Validation set: Average loss: {loss:.4f},"
-                  f" Accuracy: {correct}/{len(self.test_loader.dataset)} "
-                  f"({acc * 100.0:.3f}%)")
+                # get the index of the max log-probability
+                # pred = output.data.max(1, keepdim=True)[1]
+                # correct += pred.eq(labels.data.view_as(pred)).cpu().sum()
+
+                # total += labels.size(0)
+                prediction = torch.max(output, 1)
+                total += labels.size(0)
+                test_correct += np.sum(prediction[1].cpu().numpy() == labels.cpu().numpy())
+
+            acc = float(test_correct) / total
+            # print(f"\nRound {current_round} | Epoch {epoch}: Validation set: Average loss: {loss:.4f},"
+            #       f" Accuracy: {correct}/{len(self.test_loader.dataset)} "
+            #       f"({acc * 100.0:.3f}%)")
+
+            if self.model_type == "edge":
+                logger.info(f"loss: {loss:.4f}," 
+                            f" Accuracy: {test_correct}/{total}"
+                            f"({acc * 100.0:.3f}%)")
+            
+            if self.model_type == "cloud":
+                logger.info(f"[server] loss: {loss:.4f}," 
+                            f" Accuracy: {test_correct}/{total}"
+                            f"({acc * 100.0:.3f}%)")
+
         return acc
 
     def save(self, epoch, name):

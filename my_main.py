@@ -44,7 +44,7 @@ def parse_arguments():
     parser.add_argument('--frac', default=0.1, type=float, help="the fraction of clients: C")
 
     parser.add_argument('--random_seed', default=2, type=int)
-    parser.add_argument('--alpha', default=100, type=int, help="alpha for dirichlet distribution")
+    parser.add_argument('--alpha', default=100, type=float, help="alpha for dirichlet distribution")
     
     parser.add_argument("--batch-size", default=BATCH_SIZE, type=int, help="batch_size")
 
@@ -65,7 +65,7 @@ def parse_arguments():
     parser.add_argument("--momentum", default=0.9, type=float, help="SGD momentum")
     parser.add_argument("--weight-decay", default=5e-4, type=float, help="SGD weight decay (default: 5e-4)")
     parser.add_argument("--cloud_temperature", default=1, type=float, help="temperature for distillation")
-    parser.add_argument("--cloud_learning_rate", default=0.1, type=float, help="initial learning rate")
+    parser.add_argument("--cloud_learning_rate", default=0.001, type=float, help="initial learning rate")
     parser.add_argument("--cloud_momentum", default=0.9, type=float, help="SGD momentum")
     parser.add_argument("--cloud_weight_decay", default=5e-4, type=float, help="SGD weight decay (default: 5e-4)")
     parser.add_argument("--no_nesterov", action='store_true',help="disable nesterov on edge")
@@ -92,7 +92,7 @@ def parse_arguments():
 
     return args
 
-@Timer(text='setup_edge in {:.4f} seconds')
+# @Timer(text='setup_edge in {:.4f} seconds')
 def setup_edge(edge_name, edge_params):
     # Teacher Model
     logger.debug("Setting up edge model")
@@ -103,7 +103,18 @@ def setup_edge(edge_name, edge_params):
     
     return t_net
 
-@Timer(text='train_edge in {:.4f} seconds')
+def sync_with_server(edge_name, edge_params, cloud_weights):
+    
+    logger.debug("Syncing with cloud model")
+    num_classes = edge_params["num_classes"]
+
+    # t_net is the model itself
+    e_net = create_model(edge_name, num_classes, edge_params["device"])
+    
+    return e_net
+
+
+# @Timer(text='train_edge in {:.4f} seconds')
 def train_edge(current_round, edge_net, user_id, edge_params, edge_name, partition_idx, edge_suffix):
     
     # logger.info("Training edge model")
@@ -111,7 +122,7 @@ def train_edge(current_round, edge_net, user_id, edge_params, edge_name, partiti
     edge_net = defrost_net(edge_net)
     edge_config = edge_params.copy()
     edge_config["test_name"] = edge_name + edge_suffix
-    dict_users = edge_params['dict_users']
+    # dict_users = edge_params['dict_users']
     # pdb.set_trace()
 
     # Trainer wraps the training related functions together
@@ -123,14 +134,14 @@ def train_edge(current_round, edge_net, user_id, edge_params, edge_name, partiti
 
     return edge_net, edge_ckpt, edge_config
 
-@Timer(text='setup_cloud in {:.4f} seconds')
+# @Timer(text='setup_cloud in {:.4f} seconds')
 def setup_cloud(s_name, params):
     # Student Model
     num_classes = params["num_classes"]
     s_net = create_model(s_name, num_classes, params["device"])
     return s_net
 
-@Timer(text='free_net in {:.4f} seconds')
+# @Timer(text='free_net in {:.4f} seconds')
 def freeze_net(net):
     # freeze the layers of a model
     for param in net.parameters():
@@ -139,7 +150,7 @@ def freeze_net(net):
     net.eval()
     return net
 
-@Timer(text='defrost_net in {:.4f} seconds')
+# @Timer(text='defrost_net in {:.4f} seconds')
 def defrost_net(net):
     # freeze the layers of the teacher
     for param in net.parameters():
@@ -150,7 +161,7 @@ def defrost_net(net):
 
 def test_kd(s_net, t_net, params):
     t_net = freeze_net(t_net)
-    logger.info("---------- Training KD -------")
+    # logger.info("---------- Training KD -------")
     kd_config = params.copy()
     kd_trainer = KDTrainer(s_net, t_net=t_net, config=kd_config)
     best_acc = kd_trainer.train()
@@ -160,7 +171,7 @@ def test_kd(s_net, t_net, params):
 @Timer(text='multi_edge_kd in {:.4f} seconds')
 def multi_edge_kd(current_round, cloud_net, edge_nets, params):
     # Use CIFAR-100 unlabeled data for KD with multiple edge models
-    logger.info("---------- KD: multiple edge models teaching cloud model -------")
+    # logger.info("---------- KD: multiple edge models teaching cloud model -------")
     cloud_net = defrost_net(cloud_net)
 
     frozen_edge_nets = []
@@ -178,7 +189,7 @@ def multi_edge_kd(current_round, cloud_net, edge_nets, params):
 def dummy_trainer(current_round, cloud_net, params):
     # Calculates the test accuracy of the aggregated model
     logger.info("---------- Testing aggregated model -------")
-    
+    # pdb.set_trace()
     kd_config = params.copy()
     cloud_trainer = BaseTrainer(cloud_net, config=kd_config, idxs=None)
     cloud_trainer.get_accuracy(current_round)
@@ -250,13 +261,14 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     # m = max(int(args.frac * args.num_users), 1)
     # selected_users = np.random.choice(range(args.num_users), m, replace=False)
     # logger.debug(f"selected users: {selected_users}")
-    participating_users = select_users(args.num_users, args.frac)
-    logger.debug(f"selected users: {participating_users}")
+    
+    # participating_users = select_users(args.num_users, args.frac)
+    # logger.debug(f"selected users: {participating_users}")
 
-    for user, _ in enumerate (participating_users):
-        logger.info(f"Edge model: {user + 1}")
-        edge_net = setup_edge(e_name, params_edge)
-        edge_nets.append(edge_net)
+    # for user in range(args.num_users):
+    #     # logger.info(f"Init edge model of user {user}")
+    #     edge_net = setup_edge(e_name, params_edge)
+    #     edge_nets.append(edge_net)
 
     # Setup the cloud model 
     cloud_net = setup_cloud(c_name, params_cloud)
@@ -273,28 +285,39 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
     start = time.time()
     # t1 = start
     logger.info(f"Prep time: {start - t0}")
+
+    # Place holder for all the edge users
+    edge_nets = [None for user in range(args.num_users)]
+
+    # Init all the edge models
+    for user in range(args.num_users):
+        # logger.info(f"Init edge model of user {user}")
+        edge_net = setup_edge(e_name, params_edge)
+        edge_nets[user] = edge_net
+
     for i in range(0, params_edge["communication_round"]):
+
         t1 = time.time()
         logger.info(f"Starting {i} communication_round")
-        
+    
         # Save every round of data in separate directories
         current_round = i
         params_cloud["results_dir"] = base_path.joinpath(str(i)).joinpath('cloud_model')
         params_edge["results_dir"] = base_path.joinpath(str(i))
-
-        # cloud_path = cloud_path.joinpath('cloud_model')
         util.check_dir(params_cloud["results_dir"])
-        
-        # Train all the edge models
-        
-        # skip edge for now
-        for user, _ in enumerate (participating_users):
-            logger.info(f"Training {user + 1}th edge model")
+
+        participating_users = select_users(args.num_users, args.frac)
+        logger.info(f"selected users: {participating_users}")
+
+
+        # Train all the participating edge models       
+        for user in participating_users:
+            logger.debug(f"Training model of user {user}:")
             # TODO: The edge_config here may need to change for heterogeneous model case
             edge_net, _, edge_config = train_edge(current_round, edge_nets[user], user, params_edge, e_name, 
                                                             partition_idx=None, edge_suffix='_edge_'+ str(user))
         
-
+        
         # We select how to aggregate the edge models
         if mode == "feddf":
             logger.info("==== FedDF mode ====")
@@ -347,29 +370,24 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 logger.info("Please provide edge update method")
                 exit()
 
-            # round_time = int((time.time()-t1))
-            # # logger.debug(f"round time: {round_time}")
-            # remaining_rounds = params_edge['communication_round'] - current_round - 1
-            # #  /current_round*(params_edge['communication_round']-current_round))
-            # remaing_time = remaining_rounds * round_time
-            # logger.info(f"Remaining Time (approx.): {remaing_time // 3600 :02d}:{remaing_time % 3600 // 60 :02d}:{remaing_time % 60 :02d}")
-            
         elif mode == "fedavg":
             # need to merge fedavg to here
             logger.info("==== FedAvg mode ====")
             w_edge_models = []
+
             # create placeholder for all the edge weights
-            all_edge_weights = [None for user in participating_users]
+            participating_edge_weights = [None for user in participating_users]
             
             # Perform FedAvg            
-            for user, _ in enumerate (participating_users):
+            # order does not matter here
+            for user in range(len(participating_users)):
                 w = edge_nets[user].state_dict()
-                all_edge_weights[user] = copy.deepcopy(w)               
-            averaged_weights = FedAvg(all_edge_weights)
+                participating_edge_weights[user] = copy.deepcopy(w)               
+            averaged_weights = FedAvg(participating_edge_weights)
+
 
             if params_edge["edge_update"] == "no_update": 
-                # do nothing here
-                logger.info('No edge update, do nothing here')
+                logger.debug('No edge update, do nothing here')
                 # Test the aggregated model
                 cloud_net.load_state_dict(averaged_weights)
                 dummy_trainer(current_round, cloud_net, params_cloud)
@@ -378,16 +396,12 @@ def run_benchmarks(modes, args, params_edge, params_cloud, c_name, e_name):
                 
                 # Test the aggregated model
                 cloud_net.load_state_dict(averaged_weights)
-                # pdb.set_trace()
                 dummy_trainer(current_round, cloud_net, params_cloud)
 
                 assert c_name == e_name
-                # directly copy from the averaged weights produced by FedAvg
-                # assert the cloud and edge model arch first 
-                # for user in idxs_users:
-                for user, _ in enumerate (participating_users):
-
-                    logger.info(f"Copying cloud model to the {user + 1}th edge model")
+                
+                for user in range(args.num_users):
+                    logger.debug(f"Copying cloud model to the {user + 1}th edge model")
                     edge_nets[user].load_state_dict(averaged_weights)
             else:
                 logger.info("Please provide edge update method for FedAVG (copy or no_update")
@@ -422,28 +436,38 @@ def start_evaluation(args):
     #                                       batch_size=args.batch_size, split=0.05)
 
     _, _, _, train_dataset, test_dataset = get_cifar(num_classes, batch_size=args.batch_size, split=0.05)
-    train_set, val_set = split_train_data(train_dataset, split=0.05)
+    # train_set, val_set = split_train_data(train_dataset, split=0.05)
 
     ################# non-iid distribution #################
 
-    client_loaders, val_loader, test_loader = get_loaders(train_set, 
-                                                train_dataset.targets, 
-                                                val_set,
-                                                test_dataset, 
-                                                n_clients=args.num_users, 
-                                                alpha=args.alpha, 
-                                                batch_size=args.batch_size, 
-                                                n_data=None, 
-                                                num_workers=args.nthread, 
-                                                seed=args.random_seed, 
-                                                split=0.05)
+    # client_loaders, val_loader, test_loader = get_loaders(train_set, 
+    #                                             train_dataset.targets, 
+    #                                             val_set,
+    #                                             test_dataset, 
+    #                                             n_clients=args.num_users, 
+    #                                             alpha=args.alpha, 
+    #                                             batch_size=args.batch_size, 
+    #                                             n_data=None, 
+    #                                             num_workers=args.nthread, 
+    #                                             seed=args.random_seed, 
+    #                                             split=0.05)
+
+    client_loaders, test_loader = get_loaders(train_dataset, 
+                                        test_dataset,  
+                                        n_clients=args.num_users, 
+                                        alpha=args.alpha, 
+                                        batch_size=args.batch_size, 
+                                        n_data=None, 
+                                        num_workers=args.nthread, 
+                                        seed=args.random_seed)
+
 
     # pdb.set_trace()
     # client_loaders, test_loader = get_loaders(train_dataset, test_dataset, n_clients=args.num_users, 
     #     alpha=args.alpha, batch_size=args.batch_size, n_data=None, num_workers=args.nthread, seed=args.random_seed)
     #########################################################
 
-    dict_users = cifar_iid(train_dataset, args.num_users)
+    # dict_users = cifar_iid(train_dataset, args.num_users)
 
     # Load distillation data
     train_loader_cifar100, test_loader_cifar100, valid_loader_cifar100, train_dataset_cifar100, test_dataset_cifar100 = get_cifar(num_classes_distillation,
@@ -468,6 +492,7 @@ def start_evaluation(args):
                     f"_cloud_lrsched_{args.cloud_scheduler}"
                     f"_bs_{args.batch_size}"
                     f"_cloud_lr_{args.cloud_learning_rate}"
+                    f"_alpha_{args.alpha}"
                     f"_{timestr}"  
                 )
 
@@ -503,7 +528,7 @@ def start_evaluation(args):
         "client_loaders": client_loaders,
         "train_dataset": train_dataset, 
         # "test_dataset": test_dataset,
-        "dict_users": dict_users, 
+        # "dict_users": dict_users, 
         "batch_size": args.batch_size,
         # model configuration
         "device": device,
@@ -535,7 +560,7 @@ def start_evaluation(args):
         # "train_loader": train_loader,
         "train_loader": train_loader_cifar100, # replace with cifar100 as distillation dataset
         "valid_loader": valid_loader_cifar100,
-        "val_cifar10": val_loader,
+        # "val_cifar10": val_loader,
         "test_loader": test_loader,
         "model_type": "cloud",        
         "batch_size": args.batch_size,

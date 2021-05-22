@@ -27,14 +27,11 @@ def get_optimizer(optim_str, params):
 
     # Use on the cloud mostly
     elif optim_str.lower() == "adam":
-        print("Using adam optimizer")
+        # print("Using adam optimizer")
         if params["model_type"] == "edge":
-            optim_args["momentum"] = params["momentum"]
             optim_args["lr"] = params["learning_rate"]
             optim_args["weight_decay"] = params["weight_decay"]
-            optim_args["nesterov"] = not(params["no_nesterov"])
         else:
-            # optim_args["nesterov"] = True
             optim_args["lr"] = params["cloud_learning_rate"]
             optim_args["weight_decay"] = params["cloud_weight_decay"]
             # optim_args["betas"][0] = params["adam_beta_1"]
@@ -85,17 +82,19 @@ def get_scheduler(sched_str, params):
         return optim.lr_scheduler.ReduceLROnPlateau, sched_args
 
     elif sched_str.lower() == 'cosineannealinglr':
-        print("Using cosine annealing lr")
-        sched_args["T_max"] = len(params["train_loader"]) // params["batch_size"]
-        # sched_args["T_max"] = params["epochs"]
+        # print("Using cosine annealing lr")
+        # sched_args["T_max"] = len(params["train_loader"]) // params["batch_size"]
+        # The value from FedDF's code (10*1000) does not make sense. 
+        # With such huge T_max, the learning rate will barely decrease
+        sched_args["T_max"] = 1000 
         tmax = sched_args["T_max"]
-        print(f"T_max: {tmax}")
-        sched_args["verbose"] = True
+        # print(f"T_max: {tmax}")
+        sched_args["verbose"] = False
 
         return optim.lr_scheduler.CosineAnnealingLR, sched_args
 
     elif sched_str.lower() == "constant":
-        print("Using constant learning rate")
+        # print("Using constant learning rate")
         # use a constant scheduler, i.e. no scheduler
         return DummyScheduler, sched_args
     print("Requested optimizer not supported!")
